@@ -76,7 +76,7 @@ export default async function TournamentTables({ params, searchParams }: { param
             ))}
           </nav>
           {round && (
-            <SwipeRounds prevHref={prevHref} nextHref={nextHref}>
+            <SwipeRounds prevHref={prevHref} nextHref={nextHref} pageKey={round.number}>
               <div className="spread">
                 <h2 style={{ fontSize: 22 }}>{t("allTables", { r: round.number })}</h2>
                 <span className="help">{t("tablesCount", { n: round.tables.length })}</span>

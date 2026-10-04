@@ -110,6 +110,7 @@ export default async function TablesPage({ params, searchParams }: {
         </nav>
 
         <SwipeRounds
+          pageKey={selected}
           prevHref={selected > 1 ? `${base}/tables?r=${selected - 1}` : null}
           nextHref={selected < tour.gamesCount ? `${base}/tables?r=${selected + 1}` : null}
         >
