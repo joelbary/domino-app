@@ -8,13 +8,13 @@ function secret(): string {
   return process.env.SESSION_SECRET || "dev-only-secret-change-me";
 }
 
-function sign(payload: object): string {
+export function sign(payload: object): string {
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const mac = crypto.createHmac("sha256", secret()).update(body).digest("base64url");
   return `${body}.${mac}`;
 }
 
-function verify<T extends { exp: number }>(token: string | undefined): T | null {
+export function verify<T extends { exp: number }>(token: string | undefined): T | null {
   if (!token) return null;
   const [body, mac] = token.split(".");
   if (!body || !mac) return null;
@@ -99,4 +99,24 @@ export function recordFailure(key: string, max = 5, minutes = 15) {
 }
 export function clearFailures(key: string) {
   attempts.delete(key);
+}
+
+// ---------- players (no password: identified by phone) ----------
+const PLAYER_COOKIE = "dt_player";
+type PlayerSession = { pid: number; exp: number };
+
+export async function getPlayerId(): Promise<number | null> {
+  const jar = await cookies();
+  return verify<PlayerSession>(jar.get(PLAYER_COOKIE)?.value)?.pid ?? null;
+}
+
+export async function startPlayerSession(pid: number) {
+  const jar = await cookies();
+  const days = 365;
+  jar.set(PLAYER_COOKIE, sign({ pid, exp: Date.now() + days * 864e5 }), { ...cookieOpts, maxAge: days * 86400 });
+}
+
+export async function endPlayerSession() {
+  const jar = await cookies();
+  jar.delete(PLAYER_COOKIE);
 }

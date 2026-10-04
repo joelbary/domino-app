@@ -19,12 +19,14 @@ export default async function TournamentHub({ params }: { params: Promise<{ slug
   const base = `/admin/t/${tour.slug}`;
 
   const tiles = [
+    { href: `${base}/tables`, title: t("tables"), detail: round ? t("roundOf", { r: round, n: tour.gamesCount }) : t("createRotation") },
     { href: `${base}/players`, title: t("players"), detail: `${n} · ${t("playersTile")}` },
     ...(tour.teamsEnabled ? [{ href: `${base}/teams`, title: t("teams"), detail: t("teamsTile", { n: tms.length }) }] : []),
+    { href: `${base}/standings`, title: `${t("standings")} · ${t("results")}`, detail: tour.resultsPublished ? t("resultsPublishedMsg") : t("publishResults") },
     { href: `${base}/settings`, title: t("settings"), detail: t("settingsTile") },
     { href: `/${tour.slug}`, title: t("publicPage"), detail: `domino.joelbary.com/${tour.slug}` },
   ];
-  const later = [t("roundStatus"), t("tables"), t("results"), t("coAdmins")];
+  const later = [t("coAdmins")];
 
   return (
     <>
