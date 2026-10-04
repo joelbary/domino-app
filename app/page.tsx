@@ -17,7 +17,7 @@ export default async function Home() {
     <main className="shell">
       <section className="hero">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/domino/domino-logo.svg" alt="" className="logo" />
+        <img src="/domino-logo.svg" alt="" className="logo" />
         <h1>Domino Tournament</h1>
         <p className="lead">Rotations, scores and live standings — coming soon.</p>
       </section>
