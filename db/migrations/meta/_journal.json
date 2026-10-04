@@ -15,6 +15,13 @@
       "when": 1791090635733,
       "tag": "0001_phase1",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791092247842,
+      "tag": "0002_phone_e164",
+      "breakpoints": true
     }
   ]
 }
