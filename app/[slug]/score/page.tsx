@@ -11,7 +11,7 @@ const ERRS = new Set(["errNotSeated", "errLocked", "errNeedScore", "errPoints", 
 const KEYS: TKey[] = [
   "handByHand", "finalOnly", "addHand", "hands", "hand", "tapToFix", "noHands", "points", "whoWon", "addHandFor", "fixHand",
   "deleteHand", "enterFinal", "finalHelp", "saveFinal", "submitScore", "submitHelp", "reached100", "waitingOpp", "oppSubmitted",
-  "confirmScore", "wrongScore", "confirmedFinal", "disputedMsg", "editAfterSubmit", "submittedBy", "you", "cancel", "save",
+  "confirmScore", "wrongScore", "correctScore", "correctHelp", "confirmedFinal", "disputedMsg", "editAfterSubmit", "submittedBy", "you", "cancel", "save",
 ];
 
 export default async function ScorePage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ err?: string }> }) {

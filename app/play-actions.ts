@@ -48,17 +48,27 @@ function done(slug: string, err?: string): never {
   redirect(`/${slug}/score${err ? `?err=${err}` : ""}`);
 }
 
-async function recompute(tableId: number) {
+// After a change: if the score had already been submitted, the change counts as a new submission
+// by whoever made it, so the OTHER pair is asked to confirm the corrected score.
+function afterEdit(wasSubmitted: boolean, editorEntryId: number) {
+  return wasSubmitted
+    ? { status: "SUBMITTED" as const, submittedBy: editorEntryId, submittedAt: new Date() }
+    : { status: "IN_PROGRESS" as const, submittedBy: null, submittedAt: null };
+}
+
+async function recompute(tableId: number, wasSubmitted: boolean, editorEntryId: number) {
   const hs = await db.select().from(hands).where(eq(hands.gameTableId, tableId));
   const a = hs.filter((h) => h.pair === "A").reduce((s, h) => s + h.points, 0);
   const b = hs.filter((h) => h.pair === "B").reduce((s, h) => s + h.points, 0);
   await db
     .update(gameTables)
     .set(hs.length
-      ? { scoreA: a, scoreB: b, status: "IN_PROGRESS", submittedBy: null, submittedAt: null }
+      ? { scoreA: a, scoreB: b, ...afterEdit(wasSubmitted, editorEntryId) }
       : { scoreA: null, scoreB: null, status: "NOT_STARTED", submittedBy: null, submittedAt: null })
     .where(eq(gameTables.id, tableId));
 }
+
+const wasSub = (status: string) => status === "SUBMITTED" || status === "DISPUTED";
 
 const editable = (status: string) => status !== "CONFIRMED";
 
@@ -73,7 +83,7 @@ export async function addHand(formData: FormData) {
   if (!Number.isFinite(points) || points < 1 || points > 300) done(slug, "errPoints");
   const [{ n }] = await db.select({ n: max(hands.handNumber) }).from(hands).where(eq(hands.gameTableId, tableId));
   await db.insert(hands).values({ gameTableId: tableId, handNumber: (n ?? 0) + 1, pair, points });
-  await recompute(tableId);
+  await recompute(tableId, wasSub(s.ctx.t.status), s.entry.id);
   done(slug);
 }
 
@@ -92,7 +102,7 @@ export async function editHand(formData: FormData) {
     if (!Number.isFinite(points) || points < 1 || points > 300) done(slug, "errPoints");
     await db.update(hands).set({ pair, points }).where(and(eq(hands.id, handId), eq(hands.gameTableId, tableId)));
   }
-  await recompute(tableId);
+  await recompute(tableId, wasSub(s.ctx.t.status), s.entry.id);
   done(slug);
 }
 
@@ -108,7 +118,7 @@ export async function setFinalScore(formData: FormData) {
   await db.delete(hands).where(eq(hands.gameTableId, tableId));
   await db
     .update(gameTables)
-    .set({ scoreA: A, scoreB: B, status: "IN_PROGRESS", submittedBy: null, submittedAt: null })
+    .set({ scoreA: A, scoreB: B, ...afterEdit(wasSub(s.ctx.t.status), s.entry.id) })
     .where(eq(gameTables.id, tableId));
   done(slug);
 }

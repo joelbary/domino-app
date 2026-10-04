@@ -18,12 +18,13 @@ export default function ScoreCard(p: Props) {
   const locked = p.status === "CONFIRMED";
   const [mode, setMode] = useState<"hands" | "final">(p.hands.length === 0 && p.scoreA !== null ? "final" : "hands");
   const [sheet, setSheet] = useState<null | { pair: "A" | "B"; hand?: Hand }>(null);
+  const [correcting, setCorrecting] = useState(false);
   const a = p.scoreA ?? 0;
   const b = p.scoreB ?? 0;
   const theySubmitted = p.status === "SUBMITTED" && p.submittedBySide && p.submittedBySide !== p.mySide;
   const weSubmitted = p.status === "SUBMITTED" && p.submittedBySide === p.mySide;
-  // While the other pair is checking a submitted score, this side only confirms or disputes.
-  const canEdit = !locked && !theySubmitted;
+  // While checking the other pair's submitted score, editing is behind a "Correct the score" button.
+  const canEdit = !locked && (!theySubmitted || correcting);
   const reached = a >= 100 ? p.pairA : b >= 100 ? p.pairB : null;
   const pct = (x: number) => `${Math.min(100, x)}%`;
   const hidden = (
@@ -46,7 +47,9 @@ export default function ScoreCard(p: Props) {
           <div className="spread"><span style={{ fontWeight: 600 }}>{p.pairB}</span><span style={{ fontFamily: "var(--display)", fontSize: 40, fontWeight: 700 }}>{b}</span></div>
           {p.submittedByName && <p className="help">{fill(L.submittedBy, { name: p.submittedByName })}</p>}
           <form action={confirmScore}>{hidden}<button className="btn big block">{L.confirmScore}</button></form>
-          <form action={disputeScore}>{hidden}<button className="btn danger block">{L.wrongScore}</button></form>
+          {!correcting && <button type="button" className="btn ghost block" onClick={() => setCorrecting(true)}>{L.correctScore}</button>}
+          {correcting && <p className="help">{L.correctHelp}</p>}
+          <form action={disputeScore}>{hidden}<button className="btn danger block small">{L.wrongScore}</button></form>
         </section>
       )}
 
@@ -57,7 +60,7 @@ export default function ScoreCard(p: Props) {
         </div>
       )}
 
-      {(mode === "hands" || !canEdit) && !theySubmitted && (
+      {(mode === "hands" || !canEdit) && (!theySubmitted || correcting) && (
         <>
           <div className="grid2">
             {(["A", "B"] as const).map((side) => (
