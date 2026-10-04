@@ -4,6 +4,7 @@ import { playerView } from "@/lib/playerView";
 import { sideOf } from "@/lib/play";
 import { standingsFor, teamTable } from "@/lib/schedule";
 import { listTeams } from "@/lib/tournaments";
+import { standingsVisibility } from "@/lib/visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -14,15 +15,12 @@ export default async function PlayerStandings({ params, searchParams }: { params
   const { tour, t, entry, rounds, live, names } = v;
   const base = `/${tour.slug}`;
   const last = tour.gamesCount;
-  const lastRound = rounds.find((r) => r.number === last);
-  const allDone = !!lastRound && lastRound.status === "CLOSED";
-  const finalLive = live?.number === last;
-
-  // Visibility: during the final round, show standings as of the previous round; after the
-  // final round, hide everything until the organizer publishes the results.
-  const hideAll = !tour.resultsPublished && allDone;
-  const upto = tour.resultsPublished ? undefined : finalLive || allDone ? last - 1 : undefined;
+  const { hideAll, upto } = standingsVisibility(tour, rounds);
   const { standings } = await standingsFor(tour.id, upto);
+  // Movement arrows: compare with the standings one round earlier.
+  const counted = Math.max(0, ...rounds.filter((r) => (upto === undefined || r.number <= upto) && r.tables.some((x) => x.status === "CONFIRMED")).map((r) => r.number));
+  const prevRank = new Map<number, number>();
+  if (counted > 1) for (const s0 of (await standingsFor(tour.id, counted - 1)).standings) prevRank.set(s0.entryId, s0.rank);
   const played = standings.some((s) => s.played > 0);
   const closed = rounds.filter((r) => r.status === "CLOSED").length;
   const showTeams = tour.teamsEnabled && view === "teams";
@@ -77,14 +75,19 @@ export default async function PlayerStandings({ params, searchParams }: { params
             </section>
           ) : (
             <div className="card" style={{ padding: "6px 4px", overflowX: "auto" }}>
-              <table className="standings">
-                <thead><tr><th>#</th><th style={{ textAlign: "left" }}>{t("players")}</th><th>{t("pts")}</th><th>{t("diff")}</th><th>{t("pf")}</th></tr></thead>
+              <table className="standings p">
+                <thead><tr><th>#</th><th aria-label={t("movement")}></th><th style={{ textAlign: "left" }}>{t("players")}</th><th>{t("pts")}</th><th>{t("diff")}</th><th>{t("pf")}</th></tr></thead>
                 <tbody>
                   {standings.map((s) => (
                     <tr key={s.entryId} className={entry?.id === s.entryId ? "me" : undefined}>
                       <td className="rank">{s.rank}</td>
+                      <td className="move">{(() => {
+                        const p0 = prevRank.get(s.entryId);
+                        if (!p0 || p0 === s.rank) return <span className="same">–</span>;
+                        return p0 > s.rank ? <span className="up">▲{p0 - s.rank}</span> : <span className="down">▼{s.rank - p0}</span>;
+                      })()}</td>
                       <td style={{ textAlign: "left" }}>
-                        <span style={{ fontWeight: 600 }}>{names.get(s.entryId)?.name}{entry?.id === s.entryId ? ` (${t("you")})` : ""}</span>
+                        <Link href={`${base}/player/${s.entryId}`} style={{ fontWeight: 600, color: "var(--ink)" }}>{names.get(s.entryId)?.name}{entry?.id === s.entryId ? ` (${t("you")})` : ""}</Link>
                         <span className="help" style={{ display: "block" }}>{s.w}-{s.l}-{s.t}{names.get(s.entryId)?.team ? ` · ${t("team")} ${names.get(s.entryId)?.team}` : ""}</span>
                       </td>
                       <td><b>{s.pts}</b></td>
@@ -96,6 +99,7 @@ export default async function PlayerStandings({ params, searchParams }: { params
               </table>
             </div>
           )}
+          {played && !showTeams && <p className="help">{t("standingsLegend")}</p>}
         </>
       )}
     </PlayerShell>

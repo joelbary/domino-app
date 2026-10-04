@@ -61,7 +61,7 @@ export default async function StandingsPage({ params }: { params: Promise<{ slug
                   <tr key={s.entryId}>
                     <td className="rank">{s.rank}</td>
                     <td style={{ textAlign: "left" }}>
-                      <span style={{ fontWeight: 600 }}>{names.get(s.entryId)?.name}</span>
+                      <a href={`/${tour.slug}/player/${s.entryId}`} style={{ fontWeight: 600, color: "var(--ink)" }}>{names.get(s.entryId)?.name}</a>
                       {names.get(s.entryId)?.team && <span className="help" style={{ display: "block" }}>{t("team")} {names.get(s.entryId)?.team}</span>}
                     </td>
                     <td>{s.w}-{s.l}-{s.t}</td>
@@ -74,6 +74,7 @@ export default async function StandingsPage({ params }: { params: Promise<{ slug
             </table>
           </div>
         )}
+        {played && <p className="help">{t("standingsLegend")}</p>}
       </main>
     </>
   );

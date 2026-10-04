@@ -28,7 +28,8 @@ export function isValidPhone(e164: string): boolean {
 }
 
 // (305) 555-0142 for US/Canada, +58 414 1234567 for everyone else.
-export function formatPhone(e164: string): string {
+export function formatPhone(e164: string | null | undefined): string {
+  if (!e164) return "";
   const p = parsePhoneNumberFromString(e164);
   if (!p) return e164;
   return p.countryCallingCode === "1" ? p.formatNational() : p.formatInternational();

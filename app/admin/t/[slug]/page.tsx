@@ -40,6 +40,11 @@ export default async function TournamentHub({ params }: { params: Promise<{ slug
         <div className={`notice ${n > 0 && rem === 0 ? "ok" : "warn"}`}>
           {n > 0 && rem === 0 ? t("multipleOf4Ok", { n }) : t("multipleOf4Need", { n, k: 4 - rem, r: rem })}
         </div>
+        {ents.some((e) => !e.phone) && (
+          <Link href={`${base}/players?nophone=1`} className="notice bad" style={{ textDecoration: "none" }}>
+            {t("noPhoneWarn", { n: ents.filter((e) => !e.phone).length })} {t("showNoPhone")} →
+          </Link>
+        )}
         <div className="tiles">
           {tiles.map((x) => (
             <Link key={x.href} href={x.href} className="tile">

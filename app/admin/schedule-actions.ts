@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { gameTables, rounds, tournaments } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth";
-import { buildRandomRounds, buildSwissRound, hasScore, isFinal, loadRounds } from "@/lib/schedule";
+import { buildRandomRounds, buildSwissRound, hasScore, isFinal, loadRounds, reshuffleOneRound } from "@/lib/schedule";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const int = (f: FormData, k: string) => parseInt(str(f, k), 10) || 0;
@@ -53,7 +53,7 @@ export async function reshuffleRound(formData: FormData) {
       await db.delete(rounds).where(eq(rounds.id, round.id));
       await buildSwissRound(tour, number, round.status === "LIVE" ? "LIVE" : "PENDING");
     } else {
-      ({ repeats } = await buildRandomRounds(tour, number));
+      ({ repeats } = await reshuffleOneRound(tour, number));
     }
   } catch (e) {
     back(tour.slug, number, `&err=${errKey(e)}`);

@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -195,12 +195,18 @@ export async function updatePlayer(_: FormState, formData: FormData): Promise<Fo
   if (!entry) return { error: "Not found" };
   const firstName = str(formData, "firstName");
   const lastName = str(formData, "lastName");
-  const phone = normalizePhone(str(formData, "phone"));
+  const rawPhone = str(formData, "phone");
+  const phone = rawPhone ? normalizePhone(rawPhone) : null; // empty = still missing (stays flagged)
   if (!firstName) return keep(formData, t("errFirst"));
-  if (!isValidPhone(phone)) return keep(formData, t("errPhone"));
-  const [other] = await db.select().from(players).where(eq(players.phone, phone)).limit(1);
-  if (other && other.id !== entry.playerId) return keep(formData, t("errPhoneOther", { name: playerName(other) }));
-  await db.update(players).set({ firstName, lastName, phone, updatedAt: new Date() }).where(eq(players.id, entry.playerId));
+  if (rawPhone && !phone) return keep(formData, t("errPhone"));
+  if (phone) {
+    const [other] = await db.select().from(players).where(eq(players.phone, phone)).limit(1);
+    if (other && other.id !== entry.playerId) return keep(formData, t("errPhoneOther", { name: playerName(other) }));
+  }
+  await db
+    .update(players)
+    .set({ firstName, lastName, phone, ...(phone ? { phoneNote: null } : {}), updatedAt: new Date() })
+    .where(eq(players.id, entry.playerId));
   if (tour.teamsEnabled) await db.update(entries).set({ teamId: await resolveTeam(tour.id, formData) }).where(eq(entries.id, entry.id));
   revalidatePath(`/admin/t/${tour.slug}`, "layout");
   return { ok: t("playerUpdated") };
@@ -262,25 +268,48 @@ export async function uploadPlayers(_: FormState, formData: FormData): Promise<F
   const parsed = toPlayers(table);
   if ("error" in parsed) return { error: t(parsed.error) };
 
-  let added = 0, updated = 0, same = 0;
+  let added = 0, updated = 0, same = 0, noPhone = 0;
   const skipped: string[] = [];
   const seen = new Set<string>();
   for (const r of parsed.rows) {
-    const phone = normalizePhone(r.phone);
+    const raw = String(r.phone ?? "").trim();
+    const phone = normalizePhone(raw);
     if (!r.first) { skipped.push(t("rowSkipped", { r: r.row, why: t("errFirst") })); continue; }
-    if (!isValidPhone(phone)) { skipped.push(t("rowSkipped", { r: r.row, why: `${t("errPhone")} (${r.first} ${r.last})` })); continue; }
-    if (seen.has(phone)) { skipped.push(t("rowSkipped", { r: r.row, why: `${r.first} ${r.last}: ${t("errPhoneInTournament", { name: "↑" })}` })); continue; }
-    seen.add(phone);
+    if (phone && seen.has(phone)) { skipped.push(t("rowSkipped", { r: r.row, why: `${r.first} ${r.last}: ${t("errPhoneInTournament", { name: "↑" })}` })); continue; }
 
-    let [player] = await db.select().from(players).where(eq(players.phone, phone)).limit(1);
+    let player: typeof players.$inferSelect;
     let changed = false;
-    if (player) {
-      if (player.firstName !== r.first || player.lastName !== r.last) {
-        [player] = await db.update(players).set({ firstName: r.first, lastName: r.last, updatedAt: new Date() }).where(eq(players.id, player.id)).returning();
-        changed = true;
+    if (phone) {
+      seen.add(phone);
+      const [found] = await db.select().from(players).where(eq(players.phone, phone)).limit(1);
+      if (found) {
+        player = found;
+        if (player.firstName !== r.first || player.lastName !== r.last) {
+          [player] = await db.update(players).set({ firstName: r.first, lastName: r.last, updatedAt: new Date() }).where(eq(players.id, player.id)).returning();
+          changed = true;
+        }
+      } else {
+        [player] = await db.insert(players).values({ firstName: r.first, lastName: r.last, phone }).returning();
       }
     } else {
-      [player] = await db.insert(players).values({ firstName: r.first, lastName: r.last, phone }).returning();
+      // No usable phone: still add the player, flagged so the admin fixes it before the games start.
+      // Re-uploads match them by name instead of creating duplicates.
+      noPhone++;
+      const [match] = await db
+        .select({ p: players })
+        .from(entries)
+        .innerJoin(players, eq(entries.playerId, players.id))
+        .where(and(
+          eq(entries.tournamentId, tour.id), isNull(players.phone),
+          sql`lower(${players.firstName}) = lower(${r.first})`, sql`lower(${players.lastName}) = lower(${r.last})`,
+        ))
+        .limit(1);
+      if (match) {
+        player = match.p;
+        if ((player.phoneNote ?? "") !== raw) await db.update(players).set({ phoneNote: raw || null }).where(eq(players.id, player.id));
+      } else {
+        [player] = await db.insert(players).values({ firstName: r.first, lastName: r.last, phone: null, phoneNote: raw || null }).returning();
+      }
     }
     const teamId = tour.teamsEnabled && r.team ? await findOrCreateTeam(tour.id, r.team) : null;
     const e = await findEntry(tour.id, player.id);
@@ -297,7 +326,8 @@ export async function uploadPlayers(_: FormState, formData: FormData): Promise<F
     }
   }
   revalidatePath(`/admin/t/${tour.slug}`, "layout");
-  return { ok: t("importDone", { a: added, u: updated, k: same, s: skipped.length }), details: skipped };
+  if (noPhone) skipped.unshift(t("importNoPhone", { n: noPhone }));
+  return { ok: t("importDone", { a: added, u: updated, k: same, s: skipped.length - (noPhone ? 1 : 0) }), details: skipped };
 }
 
 // ---------- teams ----------

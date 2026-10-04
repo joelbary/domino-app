@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 const ERRS = new Set(["errNotSeated", "errLocked", "errNeedScore", "errPoints", "errScore"]);
 const KEYS: TKey[] = [
-  "handByHand", "finalOnly", "addHand", "hands", "hand", "tapToFix", "noHands", "points", "whoWon", "addHandFor", "fixHand",
+  "handByHand", "finalOnly", "addHand", "hands", "hand", "tapToFix", "noHands", "points", "whoWon", "addHandFor", "newHand", "fixHand",
   "deleteHand", "enterFinal", "finalHelp", "saveFinal", "submitScore", "submitHelp", "reached100", "waitingOpp", "oppSubmitted",
   "confirmScore", "wrongScore", "correctScore", "correctHelp", "confirmedFinal", "disputedMsg", "editAfterSubmit", "submittedBy", "you", "cancel", "save",
 ];

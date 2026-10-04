@@ -17,7 +17,7 @@ export default function ScoreCard(p: Props) {
   const { L } = p;
   const locked = p.status === "CONFIRMED";
   const [mode, setMode] = useState<"hands" | "final">(p.hands.length === 0 && p.scoreA !== null ? "final" : "hands");
-  const [sheet, setSheet] = useState<null | { pair: "A" | "B"; hand?: Hand }>(null);
+  const [sheet, setSheet] = useState<null | { pair?: "A" | "B"; hand?: Hand }>(null);
   const [correcting, setCorrecting] = useState(false);
   const a = p.scoreA ?? 0;
   const b = p.scoreB ?? 0;
@@ -68,14 +68,12 @@ export default function ScoreCard(p: Props) {
                 <div className="names">{side === "A" ? p.pairA : p.pairB}{p.mySide === side ? ` (${L.you})` : ""}</div>
                 <div className="total">{side === "A" ? a : b}</div>
                 <div className="bar100"><span style={{ width: pct(side === "A" ? a : b) }} /></div>
-                {canEdit && (
-                  <button type="button" className={`btn block ${side === "A" ? "" : ""}`} style={side === "A" ? { background: "var(--paper)", color: "var(--felt)", marginTop: 6 } : { marginTop: 6 }} onClick={() => setSheet({ pair: side })}>
-                    {L.addHand}
-                  </button>
-                )}
               </div>
             ))}
           </div>
+          {canEdit && (
+            <button type="button" className="btn big block" onClick={() => setSheet({})}>{L.addHand}</button>
+          )}
           {reached && canEdit && <div className="notice ok">{fill(L.reached100, { pair: reached })}</div>}
           {canEdit && (
             <>
@@ -131,16 +129,14 @@ export default function ScoreCard(p: Props) {
             {hidden}
             {sheet.hand && <input type="hidden" name="handId" value={sheet.hand.id} />}
             <div className="grab" />
-            <h2 style={{ fontSize: 24 }}>{sheet.hand ? fill(L.fixHand, { n: sheet.hand.n }) : fill(L.addHandFor, { pair: sheet.pair === "A" ? p.pairA : p.pairB })}</h2>
-            {sheet.hand && (
-              <div className="seg" role="radiogroup" aria-label={L.whoWon}>
-                <label><input type="radio" name="pair" value="A" defaultChecked={sheet.pair === "A"} />{p.pairA}</label>
-                <label><input type="radio" name="pair" value="B" defaultChecked={sheet.pair === "B"} />{p.pairB}</label>
-              </div>
-            )}
-            {!sheet.hand && <input type="hidden" name="pair" value={sheet.pair} />}
+            <h2 style={{ fontSize: 24 }}>{sheet.hand ? fill(L.fixHand, { n: sheet.hand.n }) : L.newHand}</h2>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{L.whoWon}</div>
+            <div className="seg" role="radiogroup" aria-label={L.whoWon}>
+              <label><input type="radio" name="pair" value="A" required defaultChecked={sheet.pair === "A"} />{p.pairA}</label>
+              <label><input type="radio" name="pair" value="B" required defaultChecked={sheet.pair === "B"} />{p.pairB}</label>
+            </div>
             <label className="field">{L.points}
-              <input type="number" name="points" inputMode="numeric" min={1} max={300} required autoFocus defaultValue={sheet.hand?.points ?? ""} className="bigscore" />
+              <input type="number" name="points" inputMode="numeric" min={1} max={300} required defaultValue={sheet.hand?.points ?? ""} className="bigscore" />
             </label>
             <div className="grid2">
               {sheet.hand ? (

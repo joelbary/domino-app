@@ -18,7 +18,8 @@ export const players = pgTable("players", {
   id: serial("id").primaryKey(),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
-  phone: text("phone").notNull().unique(), // digits only; the player's access code
+  phone: text("phone").unique(), // international format (+1305…); the player's access code. Null = missing/invalid
+  phoneNote: text("phone_note"), // what the uploaded file had when the phone couldn't be read
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

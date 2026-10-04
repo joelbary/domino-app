@@ -1,6 +1,7 @@
 import Link from "next/link";
 import PhoneSignIn from "@/components/PhoneSignIn";
 import PlayerShell from "@/components/PlayerShell";
+import SwipeRounds from "@/components/SwipeRounds";
 import TablesList from "@/components/TablesList";
 import { playerSignOut } from "@/app/play-actions";
 import type { TKey } from "@/lib/i18n";
@@ -18,6 +19,9 @@ export default async function TournamentTables({ params, searchParams }: { param
   const selected = parseInt(r ?? "", 10) || live?.number || rounds.filter((x) => x.status === "CLOSED").at(-1)?.number || 1;
   const round = rounds.find((x) => x.number === selected);
   const pair = (a: number, b: number) => `${nameOf(a)} & ${nameOf(b)}`;
+  const idx = rounds.findIndex((x) => x.number === selected);
+  const prevHref = idx > 0 ? `${base}?r=${rounds[idx - 1].number}` : null;
+  const nextHref = idx >= 0 && idx < rounds.length - 1 ? `${base}?r=${rounds[idx + 1].number}` : null;
 
   return (
     <PlayerShell v={v} tab="tables" here={`${base}${r ? `?r=${r}` : ""}`}>
@@ -72,7 +76,7 @@ export default async function TournamentTables({ params, searchParams }: { param
             ))}
           </nav>
           {round && (
-            <>
+            <SwipeRounds prevHref={prevHref} nextHref={nextHref}>
               <div className="spread">
                 <h2 style={{ fontSize: 22 }}>{t("allTables", { r: round.number })}</h2>
                 <span className="help">{t("tablesCount", { n: round.tables.length })}</span>
@@ -90,7 +94,7 @@ export default async function TournamentTables({ params, searchParams }: { param
                   mine: !!entry && !!sideOf(x, entry.id),
                 }))}
               />
-            </>
+            </SwipeRounds>
           )}
         </>
       )}

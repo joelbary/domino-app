@@ -82,6 +82,22 @@ export async function buildRandomRounds(tour: Tournament, fromNumber = 1) {
 export const isFinal = (t: TableRow) => t.status === "CONFIRMED" && hasScore(t);
 
 // Standings from confirmed games only. `uptoRound` limits which rounds count.
+// Re-seats ONE random round. All other rounds (earlier and later) count as history, so the new
+// seating still avoids anyone meeting twice across the whole tournament.
+export async function reshuffleOneRound(tour: Tournament, number: number) {
+  const ids = await activeEntryIds(tour.id);
+  if (ids.length < 4 || ids.length % 4 !== 0) throw new Error("COUNT");
+  const all = await loadRounds(tour.id);
+  const round = all.find((r) => r.number === number);
+  if (!round) throw new Error("GONE");
+  if (round.tables.some(hasScore) || round.status === "CLOSED") throw new Error("SCORED");
+  const history = all.filter((r) => r.number !== number).flatMap((r) => r.tables.map(seatsOf));
+  const result = randomSchedule({ players: ids, count: 1, history, forbidden: await forbiddenPairs(tour), timeMs: 3000 });
+  await db.delete(gameTables).where(eq(gameTables.roundId, round.id));
+  await db.insert(gameTables).values(result.rounds[0].map((t, i) => ({ roundId: round.id, number: i + 1, a1: t[0], a2: t[1], b1: t[2], b2: t[3] })));
+  return { repeats: result.repeats };
+}
+
 export async function standingsFor(tournamentId: number, uptoRound?: number) {
   const all = await loadRounds(tournamentId);
   const games: GameResult[] = [];

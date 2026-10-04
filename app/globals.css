@@ -210,3 +210,16 @@ mark { background: var(--amber-tint); color: inherit; border-radius: 3px; paddin
 .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 51; background: var(--paper); border-radius: 22px 22px 0 0; padding: 12px 20px calc(24px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 14px; box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.25); max-width: 560px; margin: 0 auto; }
 .sheet .grab { width: 44px; height: 5px; border-radius: 3px; background: #c9c5b8; align-self: center; }
 .bigscore { height: 64px !important; text-align: center; font-family: var(--display); font-weight: 700; font-size: 32px !important; }
+table.standings td.move { font-size: 12px; font-weight: 700; text-align: center; padding-left: 0; padding-right: 0; width: 34px; }
+table.standings .up { color: var(--ok-ink); }
+table.standings .down { color: #9a2a1c; }
+table.standings .same { color: #b9b4a5; }
+table.standings a { text-decoration: none; }
+table.standings a:hover { text-decoration: underline; }
+/* Fit the standings table on a phone */
+table.standings { font-size: 14px; table-layout: auto; }
+table.standings th, table.standings td { padding: 8px 4px; }
+table.standings th:first-child, table.standings td:first-child { padding-left: 8px; }
+table.standings th:last-child, table.standings td:last-child { padding-right: 8px; }
+table.standings.p td:nth-child(3) { white-space: normal; word-break: break-word; width: 100%; }
+table.standings td.move { width: 30px; font-size: 11px; }

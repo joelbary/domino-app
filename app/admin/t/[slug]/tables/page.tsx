@@ -2,13 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import AdminBar from "@/components/AdminBar";
 import ConfirmSubmit from "@/components/ConfirmSubmit";
+import SwipeRounds from "@/components/SwipeRounds";
 import Timer from "@/components/Timer";
 import { requireAdmin } from "@/lib/auth";
 import { getT, type TKey } from "@/lib/i18n";
 import {
   activeEntryIds, entryNames, forbiddenPairs, hasScore, isFinal, loadRounds, randomRoundCount, repeatsInRound, seatsOf, totalRepeats,
 } from "@/lib/schedule";
-import { getTournamentBySlug } from "@/lib/tournaments";
+import { getTournamentBySlug, listEntries } from "@/lib/tournaments";
 import {
   closeRound, deleteRotation, generateRotation, reopenRound, reshuffleRound, saveScore, startTournament, swapPlayers, timerControl,
 } from "../../../schedule-actions";
@@ -19,7 +20,7 @@ const MSGS = new Set(["rotationCreated", "reshuffled", "swapped", "started", "sc
 const ERRS = new Set(["errCount", "errScored", "errNoRotation", "errNotLive", "errScore", "errMissingScores", "errLaterScored", "errGeneric"]);
 
 export default async function TablesPage({ params, searchParams }: {
-  params: Promise<{ slug: string }>; searchParams: Promise<{ r?: string; msg?: string; err?: string }>;
+  params: Promise<{ slug: string }>; searchParams: Promise<{ r?: string; msg?: string; err?: string; rep?: string }>;
 }) {
   await requireAdmin();
   const { slug } = await params;
@@ -30,6 +31,7 @@ export default async function TablesPage({ params, searchParams }: {
   const base = `/admin/t/${tour.slug}`;
   const [all, names, active, forbidden] = await Promise.all([loadRounds(tour.id), entryNames(tour.id), activeEntryIds(tour.id), forbiddenPairs(tour)]);
   const nameOf = (id: number) => names.get(id)?.name ?? "?";
+  const missingPhones = (await listEntries(tour.id)).filter((e) => !e.phone).length;
   const liveRound = all.find((r) => r.status === "LIVE")?.number;
   const selected = parseInt(sp.r ?? "", 10) || liveRound || 1;
   const round = all.find((r) => r.number === selected);
@@ -38,7 +40,16 @@ export default async function TablesPage({ params, searchParams }: {
   );
   const notices = (
     <>
-      {sp.msg && MSGS.has(sp.msg) && <div className="notice ok" role="status">{t(sp.msg as TKey)}</div>}
+      {missingPhones > 0 && tour.status !== "FINISHED" && (
+        <Link href={`${base}/players?nophone=1`} className="notice bad" style={{ textDecoration: "none" }}>
+          {t("noPhoneWarn", { n: missingPhones })} {t("showNoPhone")} →
+        </Link>
+      )}
+      {sp.msg && MSGS.has(sp.msg) && (
+        sp.msg === "reshuffled" && Number(sp.rep) > 0
+          ? <div className="notice warn" role="status">{t("reshuffledRepeats", { n: Number(sp.rep) })}</div>
+          : <div className="notice ok" role="status">{t(sp.msg as TKey)}</div>
+      )}
       {sp.err && ERRS.has(sp.err) && <div className="notice bad" role="alert">{t(sp.err as TKey)}</div>}
     </>
   );
@@ -98,6 +109,10 @@ export default async function TablesPage({ params, searchParams }: {
           })}
         </nav>
 
+        <SwipeRounds
+          prevHref={selected > 1 ? `${base}/tables?r=${selected - 1}` : null}
+          nextHref={selected < tour.gamesCount ? `${base}/tables?r=${selected + 1}` : null}
+        >
         {!round ? (
           <section className="card"><p className="help">{t("swissLater", { r: selected, p: selected - 1 })}</p></section>
         ) : (
@@ -231,6 +246,7 @@ export default async function TablesPage({ params, searchParams }: {
             )}
           </>
         )}
+        </SwipeRounds>
 
         {!anyScore && (
           <details className="card disclose">

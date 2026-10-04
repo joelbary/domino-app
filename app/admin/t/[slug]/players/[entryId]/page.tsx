@@ -41,7 +41,7 @@ export default async function EditPlayerPage({ params }: { params: Promise<{ slu
           <h2>{t("editPlayer")}</h2>
           <EditPlayerForm
             action={updatePlayer} tournamentId={tour.id} entryId={id} teams={tms} teamsEnabled={tour.teamsEnabled}
-            labels={labels} teamId={row.entry.teamId}
+            labels={labels} teamId={row.entry.teamId} phoneNote={row.player.phoneNote}
             values={{ firstName: row.player.firstName, lastName: row.player.lastName, phone: formatPhone(row.player.phone) }}
           />
         </section>
