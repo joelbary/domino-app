@@ -41,6 +41,11 @@ export const tournaments = pgTable("tournaments", {
   resultsPublished: boolean("results_published").default(false).notNull(),
   mplOwnerEntryId: integer("mpl_owner_entry_id"), // the owner's own entry (MPL is relative to him)
   createdByAdminId: integer("created_by_admin_id"), // null = created by the main admin
+  // Tournament rules (optional). Without them, players see the general rules.
+  rulesText: text("rules_text"),
+  rulesFile: bytea("rules_file"),
+  rulesFileType: text("rules_file_type"),
+  rulesFileName: text("rules_file_name"),
   logo: bytea("logo"),
   logoMimeType: text("logo_mime_type"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -130,3 +135,13 @@ export const tournamentAdmins = pgTable("tournament_admins", {
   tournamentId: integer("tournament_id").notNull().references(() => tournaments.id, { onDelete: "cascade" }),
   adminId: integer("admin_id").notNull().references(() => admins.id, { onDelete: "cascade" }),
 }, (t) => [uniqueIndex("tournament_admins_pair").on(t.tournamentId, t.adminId)]);
+
+// General rules shown in every tournament that doesn't have its own (single row, id = 1).
+export const generalRules = pgTable("general_rules", {
+  id: integer("id").primaryKey(),
+  text: text("text"),
+  file: bytea("file"),
+  fileType: text("file_type"),
+  fileName: text("file_name"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

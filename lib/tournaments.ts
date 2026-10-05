@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { entries, players, teams, tournaments, rounds } from "@/db/schema";
 
@@ -12,8 +12,18 @@ export function slugOk(s: string): boolean {
   return /^[a-z0-9][a-z0-9-]{1,29}$/.test(s);
 }
 
+// Every tournament column except the big files (logo, rules document), plus flags saying whether they exist.
+const { logo: _logo, rulesFile: _rulesFile, ...lightCols } = getTableColumns(tournaments);
+void _logo; void _rulesFile;
+export const tournamentCols = {
+  ...lightCols,
+  hasLogo: sql<boolean>`(${tournaments.logo} is not null)`,
+  hasRulesFile: sql<boolean>`(${tournaments.rulesFile} is not null)`,
+};
+export type LightTournament = Awaited<ReturnType<typeof getTournamentBySlug>> & {};
+
 export async function getTournamentBySlug(slug: string) {
-  const [t] = await db.select().from(tournaments).where(eq(tournaments.slug, slug)).limit(1);
+  const [t] = await db.select(tournamentCols).from(tournaments).where(eq(tournaments.slug, slug)).limit(1);
   return t ?? null;
 }
 

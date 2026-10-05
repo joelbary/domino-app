@@ -5,7 +5,7 @@ import { entries, exclusions, gameTables, players, rounds, teams, tournaments } 
 import { randomSchedule, scheduleProblems, swissRound, type Table } from "@/lib/rotation";
 import { computeStandings, teamStandings, type GameResult } from "@/lib/standings";
 
-type Tournament = typeof tournaments.$inferSelect;
+type Tournament = Omit<typeof tournaments.$inferSelect, "logo" | "rulesFile">;
 export type RoundRow = typeof rounds.$inferSelect;
 export type TableRow = typeof gameTables.$inferSelect;
 

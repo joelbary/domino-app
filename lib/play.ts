@@ -57,7 +57,7 @@ export async function handsFor(tableId: number) {
 // The table + round + tournament for a given table id.
 export async function tableContext(tableId: number) {
   const [row] = await db
-    .select({ t: gameTables, r: rounds, tour: tournaments })
+    .select({ t: gameTables, r: rounds, tour: { id: tournaments.id, slug: tournaments.slug } })
     .from(gameTables)
     .innerJoin(rounds, eq(gameTables.roundId, rounds.id))
     .innerJoin(tournaments, eq(rounds.tournamentId, tournaments.id))

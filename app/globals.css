@@ -223,3 +223,10 @@ table.standings th:first-child, table.standings td:first-child { padding-left: 8
 table.standings th:last-child, table.standings td:last-child { padding-right: 8px; }
 table.standings.p td:nth-child(3) { white-space: normal; word-break: break-word; width: 100%; }
 table.standings td.move { width: 30px; font-size: 11px; }
+.rules-area { width: 100%; min-height: 220px; border: 2px solid var(--field); border-radius: 10px; padding: 12px; font: 400 16px/1.5 var(--body); color: var(--ink); background: #fff; resize: vertical; }
+.rules-text { white-space: pre-wrap; font-size: 16px; line-height: 1.55; margin: 0; }
+.pnav-inner { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+.pnav a { padding: 8px 2px; font-size: 12px; }
+.home-btn { width: 40px; height: 40px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; color: var(--paper); background: rgba(0, 0, 0, 0.22); flex: none; }
+.home-btn:hover { color: var(--paper); background: rgba(0, 0, 0, 0.35); }
+@media (max-width: 380px) { .ptop .plogo { display: none; } }

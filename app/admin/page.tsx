@@ -41,6 +41,7 @@ export default async function AdminHome() {
           {session.role === "owner" ? (
             <>
               <Link href="/admin/players" className="btn dark small">{t("playerDirectory")}</Link>
+              <Link href="/admin/rules" className="btn dark small">{t("generalRules")}</Link>
               <Link href="/admin/admins" className="btn dark small">{t("coAdminsTitle")}</Link>
             </>
           ) : (

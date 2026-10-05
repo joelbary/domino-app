@@ -4,7 +4,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { gameTables, rounds, tournaments } from "@/db/schema";
+import { gameTables, hands, rounds, tournaments } from "@/db/schema";
 import { adminTournamentById } from "@/lib/access";
 import { buildRandomRounds, buildSwissRound, hasScore, isFinal, loadRounds, reshuffleOneRound } from "@/lib/schedule";
 
@@ -103,12 +103,15 @@ export async function saveScore(formData: FormData) {
   if (!row) back(tour.slug, number);
   if (row.r.status === "PENDING") back(tour.slug, number, "&err=errNotLive");
   if (rawA === "" && rawB === "") {
-    await db.update(gameTables).set({ scoreA: null, scoreB: null, status: "NOT_STARTED", enteredByAdmin: false, confirmedAt: null }).where(eq(gameTables.id, tableId));
+    await db.delete(hands).where(eq(hands.gameTableId, tableId));
+    await db.update(gameTables).set({ scoreA: null, scoreB: null, status: "NOT_STARTED", enteredByAdmin: false, confirmedAt: null, submittedBy: null, submittedAt: null }).where(eq(gameTables.id, tableId));
     back(tour.slug, number, `&msg=scoreCleared#t${row.t.number}`);
   }
   const A = parseInt(rawA, 10);
   const B = parseInt(rawB, 10);
   if (!Number.isFinite(A) || !Number.isFinite(B) || A < 0 || B < 0 || A > 999 || B > 999) back(tour.slug, number, `&err=errScore#t${row.t.number}`);
+  // The organizer's score replaces any hand-by-hand entries, so players see the same numbers.
+  await db.delete(hands).where(eq(hands.gameTableId, tableId));
   await db
     .update(gameTables)
     .set({ scoreA: A, scoreB: B, status: "CONFIRMED", enteredByAdmin: true, confirmedAt: new Date() })
@@ -210,4 +213,28 @@ export async function setResultsPublished(formData: FormData) {
   revalidatePath(`/${tour.slug}`, "layout");
   revalidatePath(`/admin/t/${tour.slug}`, "layout");
   redirect(`/admin/t/${tour.slug}/standings`);
+}
+
+// Reopens one game (e.g. submitted too early) so the players can keep entering scores.
+export async function reopenGame(formData: FormData) {
+  const tour = await load(formData);
+  const tableId = int(formData, "tableId");
+  const number = int(formData, "number");
+  const [row] = await db
+    .select({ t: gameTables, r: rounds })
+    .from(gameTables)
+    .innerJoin(rounds, eq(gameTables.roundId, rounds.id))
+    .where(and(eq(gameTables.id, tableId), eq(rounds.tournamentId, tour.id)))
+    .limit(1);
+  if (!row) back(tour.slug, number);
+  if (row.r.status !== "LIVE") back(tour.slug, number, "&err=errNotLive");
+  const scored = row.t.scoreA !== null && row.t.scoreB !== null;
+  await db
+    .update(gameTables)
+    .set({
+      status: scored ? "IN_PROGRESS" : "NOT_STARTED", submittedBy: null, submittedAt: null,
+      confirmedBy: null, confirmedAt: null, enteredByAdmin: false,
+    })
+    .where(eq(gameTables.id, tableId));
+  back(tour.slug, number, `&msg=gameReopened#t${row.t.number}`);
 }

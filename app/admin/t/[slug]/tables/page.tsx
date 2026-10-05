@@ -12,12 +12,12 @@ import {
 import { listEntries } from "@/lib/tournaments";
 import { whatsappDigits } from "@/lib/phone";
 import {
-  closeRound, deleteRotation, generateRotation, reopenRound, reshuffleRound, saveScore, startTournament, swapPlayers, timerControl,
+  closeRound, deleteRotation, generateRotation, reopenGame, reopenRound, reshuffleRound, saveScore, startTournament, swapPlayers, timerControl,
 } from "../../../schedule-actions";
 
 export const dynamic = "force-dynamic";
 
-const MSGS = new Set(["rotationCreated", "reshuffled", "swapped", "started", "scoreSaved", "scoreCleared", "roundClosed", "swissCreated", "lastRoundClosed", "reopened", "rotationDeleted"]);
+const MSGS = new Set(["gameReopened", "rotationCreated", "reshuffled", "swapped", "started", "scoreSaved", "scoreCleared", "roundClosed", "swissCreated", "lastRoundClosed", "reopened", "rotationDeleted"]);
 const ERRS = new Set(["errCount", "errScored", "errNoRotation", "errNotLive", "errScore", "errMissingScores", "errLaterScored", "errGeneric"]);
 
 export default async function TablesPage({ params, searchParams }: {
@@ -199,6 +199,7 @@ export default async function TablesPage({ params, searchParams }: {
               );
             })()}
 
+            {round.status !== "PENDING" && <p className="help">{t("scoresHelp")}</p>}
             <div className="tiles" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}>
               {round.tables.filter((tb) => !(sp.f === "attention" && round.status === "LIVE" && tb.status === "CONFIRMED")).map((tb) => {
                 const rep = perTable.get(tb.number);
@@ -227,7 +228,17 @@ export default async function TablesPage({ params, searchParams }: {
                         <input type="number" name="scoreA" inputMode="numeric" min={0} max={999} defaultValue={tb.scoreA ?? ""} aria-label={`${t("enterScore")}: ${nameOf(tb.a1)} & ${nameOf(tb.a2)}`} style={{ textAlign: "center", fontWeight: 700 }} />
                         <span aria-hidden="true">–</span>
                         <input type="number" name="scoreB" inputMode="numeric" min={0} max={999} defaultValue={tb.scoreB ?? ""} aria-label={`${t("enterScore")}: ${nameOf(tb.b1)} & ${nameOf(tb.b2)}`} style={{ textAlign: "center", fontWeight: 700 }} />
-                        <button className="btn small" style={{ flex: "none" }}>{t("saveScore")}</button>
+                        {tb.status === "CONFIRMED" && !tb.enteredByAdmin
+                          ? <ConfirmSubmit message={t("changeConfirmed")} className="btn small">{t("saveScore")}</ConfirmSubmit>
+                          : <button className="btn small" style={{ flex: "none" }}>{t("saveScore")}</button>}
+                      </form>
+                    )}
+                    {round.status === "LIVE" && ["SUBMITTED", "CONFIRMED", "DISPUTED"].includes(tb.status) && (
+                      <form action={reopenGame}>
+                        <input type="hidden" name="tournamentId" value={tour.id} />
+                        <input type="hidden" name="tableId" value={tb.id} />
+                        <input type="hidden" name="number" value={round.number} />
+                        <ConfirmSubmit message={t("reopenGameConfirm")} className="btn small dark">{t("reopenGame")}</ConfirmSubmit>
                       </form>
                     )}
                     {tb.enteredByAdmin && hasScore(tb) && <span className="help">{t("scoreBy")}</span>}

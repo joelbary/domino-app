@@ -29,7 +29,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
             gamesCount: tour.gamesCount, rotationMode: tour.rotationMode, randomRoundsFirst: tour.randomRoundsFirst,
             teamsEnabled: tour.teamsEnabled, teamMinSize: tour.teamMinSize, teamMaxSize: tour.teamMaxSize,
             timerEnabled: tour.timerEnabled, roundMinutes: tour.roundMinutes,
-            hasLogo: !!tour.logo, logoUrl: `/t/${tour.slug}/logo?v=${tour.updatedAt.getTime()}`,
+            hasLogo: tour.hasLogo, logoUrl: `/t/${tour.slug}/logo?v=${tour.updatedAt.getTime()}`,
           }}
         />
         <details className="card disclose">

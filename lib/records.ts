@@ -3,6 +3,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { entries, gameTables, players, rounds, tournaments } from "@/db/schema";
 import { computeStandings, type GameResult } from "@/lib/standings";
+import { tournamentCols } from "@/lib/tournaments";
 
 export type TournamentResult = {
   tournamentId: number; name: string; slug: string; date: Date | null; status: string; published: boolean;
@@ -15,7 +16,7 @@ export type PlayerRecord = {
 
 // All-time records from every tournament. Final places only count once results are published.
 export async function allRecords(): Promise<Map<number, PlayerRecord>> {
-  const tours = await db.select().from(tournaments).orderBy(asc(tournaments.eventDate));
+  const tours = await db.select(tournamentCols).from(tournaments).orderBy(asc(tournaments.eventDate));
   const ents = await db.select({ id: entries.id, tournamentId: entries.tournamentId, playerId: entries.playerId, active: entries.active }).from(entries);
   const rs = await db.select().from(rounds);
   const ts = rs.length ? await db.select().from(gameTables).where(inArray(gameTables.roundId, rs.map((r) => r.id))) : [];

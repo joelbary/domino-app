@@ -19,6 +19,7 @@ export default function ScoreCard(p: Props) {
   const [mode, setMode] = useState<"hands" | "final">(p.hands.length === 0 && p.scoreA !== null ? "final" : "hands");
   const [sheet, setSheet] = useState<null | { pair?: "A" | "B"; hand?: Hand }>(null);
   const [correcting, setCorrecting] = useState(false);
+  const [ask, setAsk] = useState<null | "submit" | "confirm">(null); // "are these the final scores?" step
   const a = p.scoreA ?? 0;
   const b = p.scoreB ?? 0;
   const theySubmitted = p.status === "SUBMITTED" && p.submittedBySide && p.submittedBySide !== p.mySide;
@@ -46,7 +47,7 @@ export default function ScoreCard(p: Props) {
           <div className="spread"><span style={{ fontWeight: 600 }}>{p.pairA}</span><span className="total" style={{ fontFamily: "var(--display)", fontSize: 40, fontWeight: 700, color: "var(--felt)" }}>{a}</span></div>
           <div className="spread"><span style={{ fontWeight: 600 }}>{p.pairB}</span><span style={{ fontFamily: "var(--display)", fontSize: 40, fontWeight: 700 }}>{b}</span></div>
           {p.submittedByName && <p className="help">{fill(L.submittedBy, { name: p.submittedByName })}</p>}
-          <form action={confirmScore}>{hidden}<button className="btn big block">{L.confirmScore}</button></form>
+          <button type="button" className="btn big block" onClick={() => setAsk("confirm")}>{L.confirmScore}</button>
           {!correcting && <button type="button" className="btn ghost block" onClick={() => setCorrecting(true)}>{L.correctScore}</button>}
           {correcting && <p className="help">{L.correctHelp}</p>}
           <form action={disputeScore}>{hidden}<button className="btn danger block small">{L.wrongScore}</button></form>
@@ -114,13 +115,30 @@ export default function ScoreCard(p: Props) {
       )}
 
       {!locked && !theySubmitted && !weSubmitted && (
-        <form action={submitScore} className="stack" style={{ gap: 6 }}>
-          {hidden}
-          <button className="btn big amber block" disabled={p.scoreA === null}>{L.submitScore}</button>
+        <div className="stack" style={{ gap: 6 }}>
+          <button type="button" className="btn big amber block" disabled={p.scoreA === null} onClick={() => setAsk("submit")}>{L.submitScore}</button>
           <p className="help" style={{ textAlign: "center" }}>{L.submitHelp}</p>
-        </form>
+        </div>
       )}
       {weSubmitted && <p className="help" style={{ textAlign: "center" }}>{L.editAfterSubmit}</p>}
+
+      {ask && (
+        <>
+          <div className="sheet-back" onClick={() => setAsk(null)} />
+          <form action={ask === "submit" ? submitScore : confirmScore} className="sheet" role="dialog" aria-modal="true" aria-labelledby="ask-title">
+            {hidden}
+            <div className="grab" />
+            <h2 id="ask-title" style={{ fontSize: 26 }}>{ask === "submit" ? L.askSubmitTitle : L.askConfirmTitle}</h2>
+            <div className="card" style={{ background: "var(--ground)", display: "flex", flexDirection: "column", gap: 6 }}>
+              <div className="spread"><span style={{ fontWeight: 600 }}>{p.pairA}</span><span style={{ fontFamily: "var(--display)", fontWeight: 700, fontSize: 34, color: "var(--felt)" }}>{a}</span></div>
+              <div className="spread"><span style={{ fontWeight: 600 }}>{p.pairB}</span><span style={{ fontFamily: "var(--display)", fontWeight: 700, fontSize: 34 }}>{b}</span></div>
+            </div>
+            <p className="help" style={{ fontSize: 15 }}>{ask === "submit" ? L.askSubmitBody : L.askConfirmBody}</p>
+            <button className={`btn big block ${ask === "submit" ? "amber" : ""}`}>{ask === "submit" ? L.askSubmitYes : L.askConfirmYes}</button>
+            <button type="button" className="btn block dark" onClick={() => setAsk(null)}>{L.askNo}</button>
+          </form>
+        </>
+      )}
 
       {sheet && (
         <>
