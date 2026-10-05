@@ -25,6 +25,7 @@ export default async function TournamentHub({ params }: { params: Promise<{ slug
     { href: `${base}/players`, title: t("players"), detail: `${n} · ${t("playersTile")}` },
     ...(tour.teamsEnabled ? [{ href: `${base}/teams`, title: t("teams"), detail: t("teamsTile", { n: tms.length }) }] : []),
     { href: `${base}/standings`, title: `${t("standings")} · ${t("results")}`, detail: tour.resultsPublished ? t("resultsPublishedMsg") : t("publishResults") },
+    { href: `${base}/export`, title: t("downloadExcel"), detail: "Excel (.xlsx)" },
     { href: `${base}/settings`, title: t("settings"), detail: t("settingsTile") },
     { href: `${base}/rules`, title: t("rules"), detail: tour.rulesText || tour.hasRulesFile ? t("rulesTile") : t("usingGeneral") },
     { href: `${base}/admins`, title: t("coAdmins"), detail: t("coAdminsTile", { n: coAdminCount }) },
@@ -50,7 +51,13 @@ export default async function TournamentHub({ params }: { params: Promise<{ slug
           </Link>
         )}
         <div className="tiles">
-          {tiles.map((x) => (
+          {tiles.map((x) => x.href.endsWith("/export") ? (
+            // A file download, so a plain link (not in-app navigation).
+            <a key={x.href} href={x.href} className="tile" download>
+              <span className="t">{x.title}</span>
+              <span className="d">{x.detail}</span>
+            </a>
+          ) : (
             <Link key={x.href} href={x.href} className="tile">
               <span className="t">{x.title}</span>
               <span className="d">{x.detail}</span>

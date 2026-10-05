@@ -25,6 +25,11 @@ export default async function StandingsPage({ params }: { params: Promise<{ slug
       <AdminBar title={t("standings")} sub={tour.name} back={{ href: base, label: t("backToTournament") }} lang={lang} here={`${base}/standings`} langLabel={t("langToggle")} />
       <main className="page">
         <div className={`notice ${tour.resultsPublished ? "ok" : "warn"}`}>{tour.resultsPublished ? t("resultsPublishedMsg") : t("resultsHidden")}</div>
+        <a href={`/admin/t/${tour.slug}/export`} className="btn ghost block" download>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>
+          {t("downloadExcel")}
+        </a>
+        <p className="help">{t("downloadExcelHelp")}</p>
         {played && (
           <form action={setResultsPublished}>
             <input type="hidden" name="tournamentId" value={tour.id} />
