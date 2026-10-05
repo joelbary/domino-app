@@ -1,24 +1,22 @@
+import { adminTournament } from "@/lib/access";
 import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import AdminBar from "@/components/AdminBar";
 import ConfirmSubmit from "@/components/ConfirmSubmit";
 import { EditPlayerForm, ReplaceForm } from "@/components/PlayerForms";
 import { entries, players } from "@/db/schema";
-import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getT } from "@/lib/i18n";
 import { formatPhone } from "@/lib/phone";
 import { playerLabels } from "@/lib/playerLabels";
-import { getTournamentBySlug, listTeams } from "@/lib/tournaments";
+import { listTeams } from "@/lib/tournaments";
 import { removePlayer, replacePlayer, updatePlayer } from "../../../../actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function EditPlayerPage({ params }: { params: Promise<{ slug: string; entryId: string }> }) {
-  await requireAdmin();
   const { slug, entryId } = await params;
-  const tour = await getTournamentBySlug(slug);
-  if (!tour) notFound();
+  const { session, tour } = await adminTournament(slug);
   const id = parseInt(entryId, 10);
   const [row] = await db
     .select({ entry: entries, player: players })

@@ -1,21 +1,18 @@
+import { adminTournament } from "@/lib/access";
 import { notFound } from "next/navigation";
 import AdminBar from "@/components/AdminBar";
 import ConfirmSubmit from "@/components/ConfirmSubmit";
 import TournamentForm from "@/components/TournamentForm";
-import { requireAdmin } from "@/lib/auth";
 import { tournamentLabels } from "@/lib/formLabels";
 import { getT } from "@/lib/i18n";
-import { getTournamentBySlug } from "@/lib/tournaments";
 import { deleteTournament, updateTournament } from "../../../actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ saved?: string }> }) {
-  await requireAdmin();
   const { slug } = await params;
   const { saved } = await searchParams;
-  const tour = await getTournamentBySlug(slug);
-  if (!tour) notFound();
+  const { session, tour } = await adminTournament(slug);
   const { t, lang } = await getT();
   const base = `/admin/t/${tour.slug}`;
   return (

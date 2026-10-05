@@ -40,11 +40,23 @@ const ADMIN_COOKIE = "dt_admin";
 const MPL_COOKIE = "dt_mpl";
 const cookieOpts = { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/" };
 
-type AdminSession = { role: "owner"; exp: number };
+// "owner" = the main admin (ADMIN_PASSWORD). "admin" = a co-admin stored in the admins table.
+export type AdminSession = { role: "owner" | "admin"; aid?: number; name?: string; exp: number };
 
 export async function getAdmin(): Promise<AdminSession | null> {
   const jar = await cookies();
-  return verify<AdminSession>(jar.get(ADMIN_COOKIE)?.value);
+  const s = verify<AdminSession>(jar.get(ADMIN_COOKIE)?.value);
+  if (!s) return null;
+  if (s.role === "admin") {
+    // A co-admin who was removed or disabled loses access right away.
+    const { db } = await import("@/lib/db");
+    const { admins } = await import("@/db/schema");
+    const { and, eq } = await import("drizzle-orm");
+    const [a] = await db.select({ id: admins.id, name: admins.name }).from(admins).where(and(eq(admins.id, s.aid ?? 0), eq(admins.active, true))).limit(1);
+    if (!a) return null;
+    return { ...s, name: a.name };
+  }
+  return s;
 }
 
 export async function requireAdmin(): Promise<AdminSession> {
@@ -53,10 +65,31 @@ export async function requireAdmin(): Promise<AdminSession> {
   return s;
 }
 
-export async function startAdminSession() {
+export async function requireOwner(): Promise<AdminSession> {
+  const s = await requireAdmin();
+  if (s.role !== "owner") redirect("/admin");
+  return s;
+}
+
+export async function startAdminSession(who: { role: "owner" } | { role: "admin"; aid: number; name: string }) {
   const jar = await cookies();
   const exp = Date.now() + 1000 * 60 * 60 * 24 * 14; // 14 days
-  jar.set(ADMIN_COOKIE, sign({ role: "owner", exp }), { ...cookieOpts, maxAge: 60 * 60 * 24 * 14 });
+  jar.set(ADMIN_COOKIE, sign({ ...who, exp }), { ...cookieOpts, maxAge: 60 * 60 * 24 * 14 });
+}
+
+// Passwords for co-admins: scrypt with a random salt.
+export function hashPassword(pw: string): string {
+  const salt = crypto.randomBytes(16).toString("base64url");
+  const hash = crypto.scryptSync(pw, salt, 32).toString("base64url");
+  return `scrypt$${salt}$${hash}`;
+}
+
+export function checkPassword(pw: string, stored: string): boolean {
+  const [kind, salt, hash] = stored.split("$");
+  if (kind !== "scrypt" || !salt || !hash) return false;
+  const got = crypto.scryptSync(pw, salt, 32);
+  const want = Buffer.from(hash, "base64url");
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 
 export async function endAdminSession() {

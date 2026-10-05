@@ -36,12 +36,12 @@ export const hasScore = (t: TableRow) => t.scoreA !== null && t.scoreB !== null;
 // Names and teams for every entry (including inactive ones still seated in old rounds).
 export async function entryNames(tournamentId: number) {
   const rows = await db
-    .select({ id: entries.id, first: players.firstName, last: players.lastName, teamName: teams.name, active: entries.active })
+    .select({ id: entries.id, first: players.firstName, last: players.lastName, phone: players.phone, teamName: teams.name, active: entries.active })
     .from(entries)
     .innerJoin(players, eq(entries.playerId, players.id))
     .leftJoin(teams, eq(entries.teamId, teams.id))
     .where(eq(entries.tournamentId, tournamentId));
-  return new Map(rows.map((r) => [r.id, { name: `${r.first} ${r.last}`.trim(), first: r.first, team: r.teamName, active: r.active }]));
+  return new Map(rows.map((r) => [r.id, { name: `${r.first} ${r.last}`.trim(), first: r.first, phone: r.phone, team: r.teamName, active: r.active }]));
 }
 
 async function writeRound(tournamentId: number, number: number, tables: Table[], opts: { isSwiss: boolean; status?: "PENDING" | "LIVE" }) {

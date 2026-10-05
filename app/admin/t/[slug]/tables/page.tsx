@@ -1,15 +1,16 @@
+import { adminTournament } from "@/lib/access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import AdminBar from "@/components/AdminBar";
 import ConfirmSubmit from "@/components/ConfirmSubmit";
 import SwipeRounds from "@/components/SwipeRounds";
 import Timer from "@/components/Timer";
-import { requireAdmin } from "@/lib/auth";
 import { getT, type TKey } from "@/lib/i18n";
 import {
   activeEntryIds, entryNames, forbiddenPairs, hasScore, isFinal, loadRounds, randomRoundCount, repeatsInRound, seatsOf, totalRepeats,
 } from "@/lib/schedule";
-import { getTournamentBySlug, listEntries } from "@/lib/tournaments";
+import { listEntries } from "@/lib/tournaments";
+import { whatsappDigits } from "@/lib/phone";
 import {
   closeRound, deleteRotation, generateRotation, reopenRound, reshuffleRound, saveScore, startTournament, swapPlayers, timerControl,
 } from "../../../schedule-actions";
@@ -20,13 +21,11 @@ const MSGS = new Set(["rotationCreated", "reshuffled", "swapped", "started", "sc
 const ERRS = new Set(["errCount", "errScored", "errNoRotation", "errNotLive", "errScore", "errMissingScores", "errLaterScored", "errGeneric"]);
 
 export default async function TablesPage({ params, searchParams }: {
-  params: Promise<{ slug: string }>; searchParams: Promise<{ r?: string; msg?: string; err?: string; rep?: string }>;
+  params: Promise<{ slug: string }>; searchParams: Promise<{ r?: string; msg?: string; err?: string; rep?: string; f?: string }>;
 }) {
-  await requireAdmin();
   const { slug } = await params;
   const sp = await searchParams;
-  const tour = await getTournamentBySlug(slug);
-  if (!tour) notFound();
+  const { session, tour } = await adminTournament(slug);
   const { t, lang } = await getT();
   const base = `/admin/t/${tour.slug}`;
   const [all, names, active, forbidden] = await Promise.all([loadRounds(tour.id), entryNames(tour.id), activeEntryIds(tour.id), forbiddenPairs(tour)]);
@@ -167,8 +166,41 @@ export default async function TablesPage({ params, searchParams }: {
               </section>
             )}
 
+            {round.status === "LIVE" && (() => {
+              const c = { CONFIRMED: 0, SUBMITTED: 0, IN_PROGRESS: 0, NOT_STARTED: 0, DISPUTED: 0 } as Record<string, number>;
+              for (const tb of round.tables) c[tb.status] = (c[tb.status] ?? 0) + 1;
+              const pending = round.tables.length - c.CONFIRMED;
+              const tiles: [string, number, string][] = [
+                [t("dashConfirmed"), c.CONFIRMED, "#24402f"],
+                [t("dashWaiting"), c.SUBMITTED, "#4a3a17"],
+                [t("dashPlaying"), c.IN_PROGRESS, "#2c322b"],
+                [t("dashNotStarted"), c.NOT_STARTED, "#4d221c"],
+                ...(c.DISPUTED ? [[t("dashDisputed"), c.DISPUTED, "#7a1d12"] as [string, number, string]] : []),
+              ];
+              return (
+                <section className="card stack" style={{ background: "var(--ink)", color: "var(--paper)" }}>
+                  <div className="tiles" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 8 }}>
+                    {tiles.map(([label, n, bg]) => (
+                      <div key={label} style={{ background: bg, borderRadius: 10, padding: "10px 12px" }}>
+                        <div style={{ fontFamily: "var(--display)", fontWeight: 700, fontSize: 28, lineHeight: 1 }}>{n}</div>
+                        <div style={{ fontSize: 12, color: "#cfd3cb" }}>{label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {pending === 0 ? (
+                    <div className="notice ok">{t("allGood")}</div>
+                  ) : (
+                    <div className="row">
+                      <Link href={`${base}/tables?r=${round.number}&f=attention`} className={`btn small ${sp.f === "attention" ? "" : "ghost"}`} style={sp.f === "attention" ? {} : { color: "var(--paper)", borderColor: "var(--paper)" }}>{t("needsAttention")} · {pending}</Link>
+                      <Link href={`${base}/tables?r=${round.number}`} className={`btn small ${sp.f === "attention" ? "ghost" : ""}`} style={sp.f === "attention" ? { color: "var(--paper)", borderColor: "var(--paper)" } : {}}>{t("showAll")}</Link>
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
+
             <div className="tiles" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}>
-              {round.tables.map((tb) => {
+              {round.tables.filter((tb) => !(sp.f === "attention" && round.status === "LIVE" && tb.status === "CONFIRMED")).map((tb) => {
                 const rep = perTable.get(tb.number);
                 return (
                   <section key={tb.id} id={`t${tb.number}`} className="card stack" style={{ gap: 8 }}>
@@ -199,6 +231,26 @@ export default async function TablesPage({ params, searchParams }: {
                       </form>
                     )}
                     {tb.enteredByAdmin && hasScore(tb) && <span className="help">{t("scoreBy")}</span>}
+                    {round.status === "LIVE" && tb.status !== "CONFIRMED" && (
+                      <details className="disclose">
+                        <summary style={{ minHeight: 36, fontSize: 14 }}>{t("messagePlayers")}</summary>
+                        <div className="row" style={{ gap: 6 }}>
+                          {seatsOf(tb).map((id) => {
+                            const who = names.get(id);
+                            if (!who?.phone) return <span key={id} className="pill bad">{who?.first ?? "?"} · {t("noPhone")}</span>;
+                            const url = `https://domino.joelbary.com/${tour.slug}/score`;
+                            const key = tb.status === "DISPUTED" ? "waDisputed" : tb.status === "SUBMITTED" ? "waConfirm" : "waMissing";
+                            const text = t(key, { name: who.first, n: tb.number, r: round.number, url });
+                            return (
+                              <a key={id} href={`https://wa.me/${whatsappDigits(who.phone)}?text=${encodeURIComponent(text)}`} target="_blank" rel="noopener noreferrer" className="btn small" style={{ background: "#1f7a4d", gap: 6 }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3a.5.5 0 0 0 0-.5l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3z" /></svg>
+                                {who.first}
+                              </a>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    )}
                   </section>
                 );
               })}

@@ -4,6 +4,7 @@ import PhoneSignIn from "@/components/PhoneSignIn";
 import { playerSignOut } from "@/app/play-actions";
 import { getT, type TKey } from "@/lib/i18n";
 import { currentPlayer, myTournaments } from "@/lib/play";
+import { playerRecord } from "@/lib/records";
 import { listTournaments } from "@/lib/tournaments";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,8 @@ export default async function Home() {
   const { t, lang } = await getT();
   const player = await currentPlayer();
   const mine = player ? await myTournaments(player.id) : [];
+  const record = player ? await playerRecord(player.id) : null;
+  const placeOf = (id: number) => record?.results.find((r) => r.tournamentId === id);
   const open = player ? [] : (await listTournaments()).filter((x) => x.status !== "FINISHED");
   const groups = [
     { label: t("liveNow"), items: mine.filter((x) => x.status === "LIVE"), color: "var(--ok-ink)" },
@@ -37,6 +40,24 @@ export default async function Home() {
       <div className="page">
         {!player && <PhoneSignIn back="/" labels={{ phone: t("yourPhone"), enter: t("enterTournament"), help: t("phoneLoginHelp") }} />}
         {player && mine.length === 0 && <p className="help">{t("noMyTournaments")}</p>}
+        {record && record.games > 0 && (
+          <section className="card stack" style={{ gap: 8 }}>
+            <div className="section-label" style={{ marginTop: 0 }}>{t("myRecord")}</div>
+            <div className="tiles" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6 }}>
+              {([
+                [t("tournamentsPlayed"), String(record.tournaments)],
+                [t("wlt"), `${record.w}-${record.l}-${record.t}`],
+                [t("winPct"), `${Math.round((record.w / record.games) * 100)}%`],
+                [t("bestFinish"), record.best ? `#${record.best}` : "—"],
+              ] as [string, string][]).map(([k, v]) => (
+                <div key={k} style={{ background: "var(--ground)", borderRadius: 10, padding: "8px 4px", textAlign: "center" }}>
+                  <div style={{ fontFamily: "var(--display)", fontWeight: 700, fontSize: 20, color: "var(--felt)" }}>{v}</div>
+                  <div className="help" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>{k}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
         {groups.filter((g) => g.items.length).map((g) => (
           <div key={g.label} className="stack" style={{ gap: 8 }}>
             <div className="section-label" style={{ color: g.color }}>{g.label}</div>
@@ -46,7 +67,14 @@ export default async function Home() {
                   <span className="name" style={{ fontFamily: "var(--display)", fontSize: 21 }}>{x.name}</span>
                   <span className="meta">domino.joelbary.com/{x.slug}{x.eventDate ? ` · ${x.eventDate.toISOString().slice(0, 10)}` : ""}</span>
                 </span>
-                <span className={`pill ${x.status === "LIVE" ? "live" : x.status === "SETUP" ? "warn" : ""}`}>{t(`status${x.status}` as TKey)}</span>
+                {x.status === "FINISHED" && placeOf(x.id)?.place ? (
+                  <span style={{ textAlign: "right", flex: "none" }}>
+                    <span style={{ display: "block", fontFamily: "var(--display)", fontWeight: 700, fontSize: 22, color: "var(--felt)" }}>#{placeOf(x.id)!.place}</span>
+                    <span className="meta">{t("place", { p: "", n: placeOf(x.id)!.of }).trim()}</span>
+                  </span>
+                ) : (
+                  <span className={`pill ${x.status === "LIVE" ? "live" : x.status === "SETUP" ? "warn" : ""}`}>{t(`status${x.status}` as TKey)}</span>
+                )}
               </Link>
             ))}
           </div>

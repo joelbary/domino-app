@@ -3,18 +3,20 @@ import AdminBar from "@/components/AdminBar";
 import { requireAdmin } from "@/lib/auth";
 import { getT, type TKey } from "@/lib/i18n";
 import { listTournaments } from "@/lib/tournaments";
+import { manageableIds } from "@/lib/access";
 import { logout } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminHome() {
-  await requireAdmin();
+  const session = await requireAdmin();
   const { t, lang } = await getT();
-  const list = await listTournaments();
+  const allowed = await manageableIds(session);
+  const list = (await listTournaments()).filter((x) => allowed === null || allowed.includes(x.id));
   const pill = { LIVE: "live", SETUP: "warn", FINISHED: "" } as const;
   return (
     <>
-      <AdminBar title={t("allTournaments")} kicker={t("globalAdmin")} lang={lang} here="/admin" langLabel={t("langToggle")} />
+      <AdminBar title={t("allTournaments")} kicker={session.role === "owner" ? t("globalAdmin") : t("signedInAs", { name: session.name ?? "" })} lang={lang} here="/admin" langLabel={t("langToggle")} />
       <main className="page">
         <Link href="/admin/new" className="btn big block">+ {t("newTournament")}</Link>
         {list.length === 0 && <p className="help">{t("noTournaments")}</p>}
@@ -35,9 +37,19 @@ export default async function AdminHome() {
             </Link>
           ))}
         </div>
-        <form action={logout} style={{ alignSelf: "center" }}>
-          <button className="btn dark small">{t("signOut")}</button>
-        </form>
+        <div className="row" style={{ justifyContent: "center" }}>
+          {session.role === "owner" ? (
+            <>
+              <Link href="/admin/players" className="btn dark small">{t("playerDirectory")}</Link>
+              <Link href="/admin/admins" className="btn dark small">{t("coAdminsTitle")}</Link>
+            </>
+          ) : (
+            <Link href="/admin/account" className="btn dark small">{t("myAccount")}</Link>
+          )}
+          <form action={logout}>
+            <button className="btn dark small">{t("signOut")}</button>
+          </form>
+        </div>
       </main>
     </>
   );

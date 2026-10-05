@@ -1,22 +1,22 @@
+import { adminTournament } from "@/lib/access";
 import { and, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BackIcon } from "@/components/AdminBar";
 import PinPad from "@/components/PinPad";
 import { exclusions } from "@/db/schema";
-import { isMplUnlocked, requireAdmin } from "@/lib/auth";
+import { isMplUnlocked } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getT } from "@/lib/i18n";
-import { getTournamentBySlug, listEntries } from "@/lib/tournaments";
+import { listEntries } from "@/lib/tournaments";
 import { mplAdd, mplLock, mplRemove, mplSetMe, mplUnlock } from "../../../actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function MplPage({ params }: { params: Promise<{ slug: string }> }) {
-  await requireAdmin();
   const { slug } = await params;
-  const tour = await getTournamentBySlug(slug);
-  if (!tour) notFound();
+  const { session, tour } = await adminTournament(slug);
+  if (session.role !== "owner") notFound();
   const { t } = await getT();
   const base = `/admin/t/${tour.slug}`;
   const unlocked = await isMplUnlocked();

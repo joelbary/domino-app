@@ -5,17 +5,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { gameTables, rounds, tournaments } from "@/db/schema";
-import { requireAdmin } from "@/lib/auth";
+import { adminTournamentById } from "@/lib/access";
 import { buildRandomRounds, buildSwissRound, hasScore, isFinal, loadRounds, reshuffleOneRound } from "@/lib/schedule";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const int = (f: FormData, k: string) => parseInt(str(f, k), 10) || 0;
 
+// Loads the tournament and checks the signed-in admin may manage it.
 async function load(formData: FormData) {
-  await requireAdmin();
-  const [tour] = await db.select().from(tournaments).where(eq(tournaments.id, int(formData, "tournamentId"))).limit(1);
-  if (!tour) throw new Error("Tournament not found");
-  return tour;
+  return (await adminTournamentById(int(formData, "tournamentId"))).tour;
 }
 
 function back(slug: string, round: number | string, extra = ""): never {

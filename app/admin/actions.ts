@@ -5,10 +5,11 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { entries, exclusions, players, teams, tournaments } from "@/db/schema";
+import { admins, entries, exclusions, players, teams, tournaments } from "@/db/schema";
+import { adminTournamentById } from "@/lib/access";
 import {
-  clearFailures, endAdminSession, isLockedOut, isMplUnlocked, lockMpl, recordFailure,
-  requireAdmin, safeEqual, startAdminSession, unlockMpl,
+  checkPassword, clearFailures, endAdminSession, isLockedOut, isMplUnlocked, lockMpl, recordFailure,
+  requireAdmin, requireOwner, safeEqual, startAdminSession, unlockMpl,
 } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
@@ -46,16 +47,29 @@ export async function setLang(formData: FormData) {
 // ---------- admin session ----------
 export async function login(_: FormState, formData: FormData): Promise<FormState> {
   const { t } = await getT();
-  const expected = process.env.ADMIN_PASSWORD;
-  if (!expected) return { error: t("noAdminPassword") };
+  const username = str(formData, "username").toLowerCase();
+  const password = str(formData, "password");
   const wait = isLockedOut("login");
   if (wait) return { error: t("lockedOut", { m: wait }) };
-  if (!safeEqual(str(formData, "password"), expected)) {
+  if (!username) {
+    // Main admin: password only.
+    const expected = process.env.ADMIN_PASSWORD;
+    if (!expected) return { error: t("noAdminPassword") };
+    if (!safeEqual(password, expected)) {
+      recordFailure("login", 8, 15);
+      return { error: t("wrongPassword") };
+    }
+    clearFailures("login");
+    await startAdminSession({ role: "owner" });
+    redirect("/admin");
+  }
+  const [a] = await db.select().from(admins).where(and(eq(admins.email, username), eq(admins.active, true))).limit(1);
+  if (!a || !checkPassword(password, a.passwordHash)) {
     recordFailure("login", 8, 15);
-    return { error: t("wrongPassword") };
+    return { error: t("wrongLogin"), fields: { username } };
   }
   clearFailures("login");
-  await startAdminSession();
+  await startAdminSession({ role: "admin", aid: a.id, name: a.name });
   redirect("/admin");
 }
 
@@ -110,18 +124,21 @@ async function readTournamentForm(formData: FormData, currentId?: number) {
 }
 
 export async function createTournament(_: FormState, formData: FormData): Promise<FormState> {
-  await requireAdmin();
+  const session = await requireAdmin();
   const r = await readTournamentForm(formData);
   if ("error" in r) return keep(formData, r.error!);
-  const [created] = await db.insert(tournaments).values(r.values as typeof tournaments.$inferInsert).returning();
+  const [created] = await db
+    .insert(tournaments)
+    .values({ ...(r.values as typeof tournaments.$inferInsert), createdByAdminId: session.role === "admin" ? session.aid : null })
+    .returning();
   revalidatePath("/admin");
   redirect(`/admin/t/${created.slug}`);
 }
 
 export async function updateTournament(_: FormState, formData: FormData): Promise<FormState> {
-  await requireAdmin();
   const { t } = await getT();
   const id = int(formData, "id", 0);
+  await adminTournamentById(id);
   const r = await readTournamentForm(formData, id);
   if ("error" in r) return keep(formData, r.error!);
   await db.update(tournaments).set(r.values).where(eq(tournaments.id, id));
@@ -131,19 +148,18 @@ export async function updateTournament(_: FormState, formData: FormData): Promis
 }
 
 export async function deleteTournament(formData: FormData) {
-  await requireAdmin();
   if (str(formData, "confirm") !== "DELETE") return;
   const id = int(formData, "id", 0);
+  await adminTournamentById(id);
   await db.delete(tournaments).where(eq(tournaments.id, id));
   revalidatePath("/admin");
   redirect("/admin");
 }
 
 // ---------- players ----------
+// Loads the tournament and checks the signed-in admin may manage it.
 async function tournamentOrThrow(id: number) {
-  const [t] = await db.select().from(tournaments).where(eq(tournaments.id, id)).limit(1);
-  if (!t) throw new Error("Tournament not found");
-  return t;
+  return (await adminTournamentById(id)).tour;
 }
 
 async function resolveTeam(tournamentId: number, formData: FormData): Promise<number | null> {
@@ -370,7 +386,7 @@ export async function deleteTeam(formData: FormData) {
 
 // ---------- MPL (owner's private list) ----------
 export async function mplUnlock(_: FormState, formData: FormData): Promise<FormState> {
-  await requireAdmin();
+  await requireOwner();
   const { t } = await getT();
   const pin = process.env.MPL_PIN;
   const slug = str(formData, "slug");
@@ -392,7 +408,7 @@ export async function mplLock(formData: FormData) {
 }
 
 async function requireMpl() {
-  await requireAdmin();
+  await requireOwner();
   if (!(await isMplUnlocked())) throw new Error("Locked");
 }
 

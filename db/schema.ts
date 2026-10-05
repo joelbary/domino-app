@@ -40,6 +40,7 @@ export const tournaments = pgTable("tournaments", {
   roundMinutes: integer("round_minutes").default(30).notNull(),
   resultsPublished: boolean("results_published").default(false).notNull(),
   mplOwnerEntryId: integer("mpl_owner_entry_id"), // the owner's own entry (MPL is relative to him)
+  createdByAdminId: integer("created_by_admin_id"), // null = created by the main admin
   logo: bytea("logo"),
   logoMimeType: text("logo_mime_type"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -109,13 +110,23 @@ export const exclusions = pgTable("exclusions", {
   entryBId: integer("entry_b_id").notNull().references(() => entries.id, { onDelete: "cascade" }),
 }, (t) => [uniqueIndex("exclusions_pair").on(t.tournamentId, t.entryAId, t.entryBId)]);
 
+// Co-admins (organizers). The main admin (owner) logs in with ADMIN_PASSWORD and is not stored here.
+// An organizer can create tournaments and manages only the ones they created or were added to.
 export const admins = pgTable("admins", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  email: text("email").unique(),
+  email: text("email").unique(), // login name (username or email), stored lower-case
   passwordHash: text("password_hash").notNull(),
   isOwner: boolean("is_owner").default(false).notNull(),
-  tournamentId: integer("tournament_id").references(() => tournaments.id, { onDelete: "cascade" }), // null = all tournaments
+  tournamentId: integer("tournament_id").references(() => tournaments.id, { onDelete: "cascade" }), // unused
   playerId: integer("player_id").unique().references(() => players.id),
+  active: boolean("active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// Which co-admins can manage which tournament.
+export const tournamentAdmins = pgTable("tournament_admins", {
+  id: serial("id").primaryKey(),
+  tournamentId: integer("tournament_id").notNull().references(() => tournaments.id, { onDelete: "cascade" }),
+  adminId: integer("admin_id").notNull().references(() => admins.id, { onDelete: "cascade" }),
+}, (t) => [uniqueIndex("tournament_admins_pair").on(t.tournamentId, t.adminId)]);

@@ -11,7 +11,7 @@ export default async function LoginPage() {
     <>
       <AdminBar title={t("adminLogin")} kicker={t("appName")} lang={lang} here="/admin/login" langLabel={t("langToggle")} />
       <main className="page" style={{ maxWidth: 420 }}>
-        <LoginForm labels={{ password: t("password"), signIn: t("signIn") }} />
+        <LoginForm labels={{ password: t("password"), signIn: t("signIn"), username: t("username"), usernameHelp: t("usernameHelp") }} />
       </main>
     </>
   );

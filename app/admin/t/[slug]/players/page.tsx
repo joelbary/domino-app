@@ -1,21 +1,19 @@
+import { adminTournament } from "@/lib/access";
 import { notFound } from "next/navigation";
 import AdminBar from "@/components/AdminBar";
 import { AddPlayerForm, PlayerList, UploadForm } from "@/components/PlayerForms";
-import { requireAdmin } from "@/lib/auth";
 import { getT, type TKey } from "@/lib/i18n";
 import { formatPhone } from "@/lib/phone";
 import { playerLabels } from "@/lib/playerLabels";
-import { getTournamentBySlug, listEntries, listTeams } from "@/lib/tournaments";
+import { listEntries, listTeams } from "@/lib/tournaments";
 import { addPlayer, uploadPlayers } from "../../../actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function PlayersPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ msg?: string; nophone?: string }> }) {
-  await requireAdmin();
   const { slug } = await params;
   const { msg, nophone } = await searchParams;
-  const tour = await getTournamentBySlug(slug);
-  if (!tour) notFound();
+  const { session, tour } = await adminTournament(slug);
   const { t, lang } = await getT();
   const [ents, tms] = await Promise.all([listEntries(tour.id), listTeams(tour.id)]);
   const base = `/admin/t/${tour.slug}`;

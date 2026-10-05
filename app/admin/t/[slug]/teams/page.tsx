@@ -1,22 +1,20 @@
+import { adminTournament } from "@/lib/access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import AddTeamForm from "@/components/AddTeamForm";
 import AdminBar from "@/components/AdminBar";
 import ConfirmSubmit from "@/components/ConfirmSubmit";
-import { requireAdmin } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { formatPhone } from "@/lib/phone";
-import { getTournamentBySlug, listEntries, listTeams } from "@/lib/tournaments";
+import { listEntries, listTeams } from "@/lib/tournaments";
 import { addTeam, deleteTeam, renameTeam } from "../../../actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function TeamsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ err?: string }> }) {
-  await requireAdmin();
   const { slug } = await params;
   const { err } = await searchParams;
-  const tour = await getTournamentBySlug(slug);
-  if (!tour) notFound();
+  const { session, tour } = await adminTournament(slug);
   const { t, lang } = await getT();
   const base = `/admin/t/${tour.slug}`;
   const [tms, ents] = await Promise.all([listTeams(tour.id), listEntries(tour.id)]);

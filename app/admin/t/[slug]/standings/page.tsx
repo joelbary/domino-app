@@ -1,19 +1,17 @@
+import { adminTournament } from "@/lib/access";
 import { notFound } from "next/navigation";
 import AdminBar from "@/components/AdminBar";
 import ConfirmSubmit from "@/components/ConfirmSubmit";
 import { setResultsPublished } from "../../../schedule-actions";
-import { requireAdmin } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { entryNames, standingsFor, teamTable } from "@/lib/schedule";
-import { getTournamentBySlug, listTeams } from "@/lib/tournaments";
+import { listTeams } from "@/lib/tournaments";
 
 export const dynamic = "force-dynamic";
 
 export default async function StandingsPage({ params }: { params: Promise<{ slug: string }> }) {
-  await requireAdmin();
   const { slug } = await params;
-  const tour = await getTournamentBySlug(slug);
-  if (!tour) notFound();
+  const { session, tour } = await adminTournament(slug);
   const { t, lang } = await getT();
   const base = `/admin/t/${tour.slug}`;
   const [{ standings }, names, tms] = await Promise.all([standingsFor(tour.id), entryNames(tour.id), listTeams(tour.id)]);
