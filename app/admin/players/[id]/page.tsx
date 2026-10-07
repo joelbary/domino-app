@@ -30,7 +30,7 @@ export default async function PlayerRecordPage({ params }: { params: Promise<{ i
 
   return (
     <>
-      <AdminBar title={name} sub={formatPhone(p.phone) || t("noPhone")} back={{ href: "/admin/players", label: t("playerDirectory") }} lang={lang} here={`/admin/players/${p.id}`} langLabel={t("langToggle")} />
+      <AdminBar title={name} sub={formatPhone(p.phone) || t("noPhone")} back={{ href: "/admin/players", label: t("addressBook") }} lang={lang} here={`/admin/players/${p.id}`} langLabel={t("langToggle")} />
       <main className="page">
         <section className="card stack">
           <h2>{t("allTime")}</h2>

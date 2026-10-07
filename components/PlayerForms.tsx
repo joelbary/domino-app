@@ -48,21 +48,110 @@ export function PlayerFields({ labels, values, fields, optionalPhone, phoneNote 
   );
 }
 
-export function AddPlayerForm({ action, tournamentId, teams, teamsEnabled, labels }: {
-  action: (s: FormState, f: FormData) => Promise<FormState>; tournamentId: number; teams: Team[]; teamsEnabled: boolean; labels: Labels;
+type Book = { id: number; first: string; last: string; phone: string; hasPhone: boolean; inTournament: boolean };
+
+const fold = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+// Add one player. Typing a name suggests matches from the address book; picking one fills the phone.
+export function AddPlayerForm({ action, tournamentId, teams, teamsEnabled, labels, book = [] }: {
+  action: (s: FormState, f: FormData) => Promise<FormState>; tournamentId: number; teams: Team[]; teamsEnabled: boolean; labels: Labels; book?: Book[];
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(action, {});
   const ref = useRef<HTMLFormElement>(null);
+  const [first, setFirst] = useState("");
+  const [last, setLast] = useState("");
+  const [picked, setPicked] = useState<Book | null>(null);
   useEffect(() => {
-    if (state.ok) ref.current?.reset();
+    if (state.ok) {
+      ref.current?.reset();
+      setFirst(""); setLast(""); setPicked(null);
+    }
   }, [state]);
+  const q = fold(`${first} ${last}`);
+  const hits = !picked && q.length >= 2
+    ? book.filter((b) => !b.inTournament && fold(`${b.first} ${b.last}`).includes(q)).slice(0, 6)
+    : [];
   return (
     <form ref={ref} action={formAction} className="stack">
       <input type="hidden" name="tournamentId" value={tournamentId} />
+      {picked && <input type="hidden" name="playerId" value={picked.id} />}
       <Notice state={state} />
-      <PlayerFields labels={labels} fields={state.fields} />
+      {picked ? (
+        <div className="notice ok" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span>{labels.usingBook.replace("{name}", `${picked.first} ${picked.last}`)}</span>
+          <span style={{ fontWeight: 500 }}>{picked.phone || labels.noPhone}</span>
+          <button type="button" className="btn small dark" style={{ alignSelf: "flex-start" }} onClick={() => setPicked(null)}>{labels.clearPick}</button>
+        </div>
+      ) : (
+        <>
+          <div className="grid2 collapse">
+            <label className="field">{labels.firstName}
+              <input type="text" name="firstName" value={first} onChange={(e) => setFirst(e.target.value)} required autoComplete="off" />
+            </label>
+            <label className="field">{labels.lastName}
+              <input type="text" name="lastName" value={last} onChange={(e) => setLast(e.target.value)} autoComplete="off" />
+            </label>
+          </div>
+          {hits.length > 0 && (
+            <div className="stack" style={{ gap: 6 }}>
+              <span className="help" style={{ fontWeight: 600 }}>{labels.pickFromBook}</span>
+              {hits.map((b) => (
+                <button key={b.id} type="button" className="item" style={{ border: "2px solid var(--felt)", cursor: "pointer", textAlign: "left" }} onClick={() => setPicked(b)}>
+                  <span className="main"><span className="name">{b.first} {b.last}</span><span className="meta">{b.phone || labels.noPhone}</span></span>
+                  <span className="btn small" style={{ flex: "none" }}>{labels.useThis}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <label className="field">{labels.phone}
+            <input type="tel" name="phone" defaultValue={state.fields?.phone} inputMode="tel" autoComplete="off" />
+            <span className="help" style={{ fontWeight: 400 }}>{labels.phoneHelp}</span>
+          </label>
+        </>
+      )}
       {teamsEnabled && <TeamPicker teams={teams} labels={labels} fields={state.fields} />}
       <button className="btn block" disabled={pending}>{labels.add}</button>
+    </form>
+  );
+}
+
+// Add several players from the address book at once (checkboxes + search).
+export function AddFromBook({ action, tournamentId, teams, teamsEnabled, labels, book }: {
+  action: (s: FormState, f: FormData) => Promise<FormState>; tournamentId: number; teams: Team[]; teamsEnabled: boolean; labels: Labels; book: Book[];
+}) {
+  const [state, formAction, pending] = useActionState<FormState, FormData>(action, {});
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    if (state.ok) setSel(new Set());
+  }, [state]);
+  const needle = fold(q);
+  const list = book.filter((b) => !needle || fold(`${b.first} ${b.last}`).includes(needle));
+  const toggle = (id: number) => setSel((s0) => {
+    const s1 = new Set(s0);
+    if (s1.has(id)) s1.delete(id); else s1.add(id);
+    return s1;
+  });
+  return (
+    <form action={formAction} className="stack">
+      <input type="hidden" name="tournamentId" value={tournamentId} />
+      {[...sel].map((id) => <input key={id} type="hidden" name="playerIds" value={id} />)}
+      <Notice state={state} />
+      <p className="help">{labels.fromBookHelp}</p>
+      <input type="search" placeholder={labels.searchBook} aria-label={labels.searchBook} value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="list" style={{ maxHeight: 340, overflowY: "auto", gap: 4 }} data-noswipe>
+        {list.map((b) => (
+          <label key={b.id} className="item" style={{ cursor: b.inTournament ? "default" : "pointer", opacity: b.inTournament ? 0.5 : 1, background: "var(--ground)" }}>
+            <input type="checkbox" checked={b.inTournament || sel.has(b.id)} disabled={b.inTournament} onChange={() => toggle(b.id)} />
+            <span className="main">
+              <span className="name">{b.first} {b.last}</span>
+              <span className="meta">{b.inTournament ? labels.alreadyIn : b.phone || labels.noPhone}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      {teamsEnabled && <TeamPicker teams={teams} labels={labels} />}
+      <button className="btn block" disabled={pending || sel.size === 0}>{labels.addSelected.replace("{n}", String(sel.size))}</button>
     </form>
   );
 }
@@ -76,6 +165,7 @@ export function UploadForm({ action, tournamentId, labels }: {
       <input type="hidden" name="tournamentId" value={tournamentId} />
       <Notice state={state} />
       <p className="help">{labels.uploadHelp}</p>
+      {labels.uploadNoPhoneHelp && <p className="help">{labels.uploadNoPhoneHelp}</p>}
       <a href="/admin/template.csv" className="help" style={{ color: "var(--felt)", fontWeight: 600 }}>{labels.downloadTemplate}</a>
       <input type="file" name="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required aria-label={labels.chooseFile} />
       <button className="btn ghost block" disabled={pending}>{pending ? "…" : labels.upload}</button>

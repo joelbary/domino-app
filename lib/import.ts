@@ -39,7 +39,7 @@ export function toPlayers(table: unknown[][]): { rows: ImportRow[] } | { error: 
   const iLast = find("last", "apellido", "surname", "family");
   const iFull = find("full name", "jugador", "player", "name");
   const iTeam = find("team", "equipo");
-  if (iPhone < 0 || (iFirst < 0 && iFull < 0)) return { error: "errNoColumns" };
+  if (iFirst < 0 && iFull < 0) return { error: "errNoColumns" }; // Phone is optional (address book fills it)
 
   const rows: ImportRow[] = [];
   table.slice(1).forEach((r, idx) => {

@@ -40,7 +40,7 @@ export default async function AdminHome() {
         <div className="row" style={{ justifyContent: "center" }}>
           {session.role === "owner" ? (
             <>
-              <Link href="/admin/players" className="btn dark small">{t("playerDirectory")}</Link>
+              <Link href="/admin/players" className="btn dark small">{t("addressBook")}</Link>
               <Link href="/admin/rules" className="btn dark small">{t("generalRules")}</Link>
               <Link href="/admin/admins" className="btn dark small">{t("coAdminsTitle")}</Link>
             </>

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import AdminBar from "@/components/AdminBar";
 import DirectoryList from "@/components/DirectoryList";
+import { BookAddForm, BookUploadForm } from "@/components/BookForms";
+import { addBookPlayer, uploadBook } from "../admin-actions";
 import { requireOwner } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { formatPhone } from "@/lib/phone";
@@ -27,8 +29,19 @@ export default async function DirectoryPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <AdminBar title={t("playerDirectory")} sub={`${rows.length} ${t("playersPlural")}`} back={{ href: "/admin", label: t("backToAll") }} lang={lang} here="/admin/players" langLabel={t("langToggle")} />
+      <AdminBar title={t("addressBook")} sub={`${rows.length} ${t("playersPlural")}`} back={{ href: "/admin", label: t("backToAll") }} lang={lang} here="/admin/players" langLabel={t("langToggle")} />
       <main className="page">
+        <p className="help">{t("addressBookHelp")}</p>
+        <div className="grid2 collapse" style={{ alignItems: "start" }}>
+          <details className="card disclose">
+            <summary>+ {t("addToBook")}</summary>
+            <BookAddForm action={addBookPlayer} labels={{ firstName: t("firstName"), lastName: t("lastName"), phone: t("phone"), phoneHelp: t("phoneHelp"), addToBook: t("addToBook") }} />
+          </details>
+          <details className="card disclose">
+            <summary>{t("uploadToBook")}</summary>
+            <BookUploadForm action={uploadBook} labels={{ uploadHelp: t("uploadHelp"), downloadTemplate: t("downloadTemplate"), chooseFile: t("chooseFile"), upload: t("upload") }} />
+          </details>
+        </div>
         <p className="help">{t("directoryHelp")}</p>
         <nav className="chips" aria-label={t("sortBy")}>
           {sorts.map(([k, label]) => (

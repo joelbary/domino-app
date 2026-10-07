@@ -117,3 +117,70 @@ export async function updateGlobalPlayer(_: FormState, formData: FormData): Prom
   revalidatePath(`/admin/players/${id}`);
   return { ok: t("playerUpdated") };
 }
+
+// ---------- address book (main admin) ----------
+export async function addBookPlayer(_: FormState, formData: FormData): Promise<FormState> {
+  await requireOwner();
+  const { t } = await getT();
+  const { normalizePhone } = await import("@/lib/phone");
+  const { players } = await import("@/db/schema");
+  const firstName = str(formData, "firstName");
+  const lastName = str(formData, "lastName");
+  const raw = str(formData, "phone");
+  const phone = raw ? normalizePhone(raw) : null;
+  if (!firstName) return { error: t("errFirst"), fields: { firstName, lastName, phone: raw } };
+  if (raw && !phone) return { error: t("errPhone"), fields: { firstName, lastName, phone: raw } };
+  if (phone) {
+    const [other] = await db.select().from(players).where(eq(players.phone, phone)).limit(1);
+    if (other) return { error: t("errPhoneBelongs", { name: `${other.firstName} ${other.lastName}` }), fields: { firstName, lastName, phone: raw } };
+  }
+  await db.insert(players).values({ firstName, lastName, phone });
+  revalidatePath("/admin/players");
+  return { ok: t("addedToBook") };
+}
+
+export async function uploadBook(_: FormState, formData: FormData): Promise<FormState> {
+  await requireOwner();
+  const { t } = await getT();
+  const { normalizePhone } = await import("@/lib/phone");
+  const { players } = await import("@/db/schema");
+  const { readTable, toPlayers } = await import("@/lib/import");
+  const { findByName } = await import("@/lib/directory");
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { error: t("errFile") };
+  let table: unknown[][];
+  try {
+    table = await readTable(file);
+  } catch {
+    return { error: t("errFile") };
+  }
+  const parsed = toPlayers(table);
+  if ("error" in parsed) return { error: t(parsed.error) };
+  let added = 0, updated = 0;
+  const skipped: string[] = [];
+  for (const r of parsed.rows) {
+    if (!r.first) { skipped.push(t("rowSkipped", { r: r.row, why: t("errFirst") })); continue; }
+    const phone = r.phone ? normalizePhone(r.phone) : null;
+    if (r.phone && !phone) { skipped.push(t("rowSkipped", { r: r.row, why: `${t("errPhone")} (${r.first} ${r.last})` })); continue; }
+    const byPhone = phone ? (await db.select().from(players).where(eq(players.phone, phone)).limit(1))[0] : undefined;
+    if (byPhone) {
+      if (byPhone.firstName !== r.first || byPhone.lastName !== r.last) {
+        await db.update(players).set({ firstName: r.first, lastName: r.last, updatedAt: new Date() }).where(eq(players.id, byPhone.id));
+        updated++;
+      }
+      continue;
+    }
+    const byName = await findByName(r.first, r.last);
+    if (byName) {
+      if (phone && !byName.phone) {
+        await db.update(players).set({ phone, phoneNote: null, updatedAt: new Date() }).where(eq(players.id, byName.id));
+        updated++;
+      }
+      continue;
+    }
+    await db.insert(players).values({ firstName: r.first, lastName: r.last, phone });
+    added++;
+  }
+  revalidatePath("/admin/players");
+  return { ok: t("bookImportDone", { a: added, u: updated, s: skipped.length }), details: skipped };
+}

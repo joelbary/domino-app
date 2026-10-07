@@ -5,8 +5,9 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { admins, entries, exclusions, players, teams, tournaments } from "@/db/schema";
+import { admins, entries, exclusions, players, rounds, teams, tournaments } from "@/db/schema";
 import { adminTournamentById } from "@/lib/access";
+import { findByName, normName } from "@/lib/directory";
 import {
   checkPassword, clearFailures, endAdminSession, isLockedOut, isMplUnlocked, lockMpl, recordFailure,
   requireAdmin, requireOwner, safeEqual, startAdminSession, unlockMpl,
@@ -151,7 +152,12 @@ export async function deleteTournament(formData: FormData) {
   if (str(formData, "confirm") !== "DELETE") return;
   const id = int(formData, "id", 0);
   await adminTournamentById(id);
-  await db.delete(tournaments).where(eq(tournaments.id, id));
+  // Games point at players' entries, so remove the rounds (and their games) first, then the tournament.
+  await db.transaction(async (tx) => {
+    await tx.delete(rounds).where(eq(rounds.tournamentId, id));
+    await tx.delete(exclusions).where(eq(exclusions.tournamentId, id));
+    await tx.delete(tournaments).where(eq(tournaments.id, id));
+  });
   revalidatePath("/admin");
   redirect("/admin");
 }
@@ -182,24 +188,56 @@ export async function addPlayer(_: FormState, formData: FormData): Promise<FormS
   const tour = await tournamentOrThrow(int(formData, "tournamentId", 0));
   const firstName = str(formData, "firstName");
   const lastName = str(formData, "lastName");
-  const phone = normalizePhone(str(formData, "phone"));
-  if (!firstName) return keep(formData, t("errFirst"));
-  if (!isValidPhone(phone)) return keep(formData, t("errPhone"));
+  const bookId = int(formData, "playerId", 0); // picked from the address book
 
-  let [player] = await db.select().from(players).where(eq(players.phone, phone)).limit(1);
-  if (player) {
-    const e = await findEntry(tour.id, player.id);
-    if (e?.active) return keep(formData, t("errPhoneInTournament", { name: playerName(player) }));
-    [player] = await db.update(players).set({ firstName, lastName, updatedAt: new Date() }).where(eq(players.id, player.id)).returning();
+  let player: typeof players.$inferSelect | undefined;
+  if (bookId) {
+    [player] = await db.select().from(players).where(eq(players.id, bookId)).limit(1);
+    if (!player) return keep(formData, t("errGeneric"));
   } else {
-    [player] = await db.insert(players).values({ firstName, lastName, phone }).returning();
+    const phone = normalizePhone(str(formData, "phone"));
+    if (!firstName) return keep(formData, t("errFirst"));
+    if (!str(formData, "phone")) {
+      // No phone typed: use the address book if exactly one player has this name.
+      player = (await findByName(firstName, lastName)) ?? undefined;
+      if (!player) return keep(formData, t("errPhone"));
+    } else {
+      if (!isValidPhone(phone)) return keep(formData, t("errPhone"));
+      [player] = await db.select().from(players).where(eq(players.phone, phone)).limit(1);
+      if (player && normName(player.firstName, player.lastName) !== normName(firstName, lastName)) {
+        // Never silently rename someone else: the number already belongs to another person.
+        return keep(formData, t("errPhoneBelongs", { name: playerName(player) }));
+      }
+      if (!player) [player] = await db.insert(players).values({ firstName, lastName, phone }).returning();
+    }
   }
+  const e = await findEntry(tour.id, player.id);
+  if (e?.active) return keep(formData, t("errPhoneInTournament", { name: playerName(player) }));
   const teamId = tour.teamsEnabled ? await resolveTeam(tour.id, formData) : null;
-  const existing = await findEntry(tour.id, player.id);
-  if (existing) await db.update(entries).set({ active: true, teamId }).where(eq(entries.id, existing.id));
+  if (e) await db.update(entries).set({ active: true, teamId }).where(eq(entries.id, e.id));
   else await db.insert(entries).values({ tournamentId: tour.id, playerId: player.id, teamId });
   revalidatePath(`/admin/t/${tour.slug}`, "layout");
-  return { ok: t("playerAdded") };
+  return { ok: t("playerAddedName", { name: playerName(player) }) };
+}
+
+// Adds several address-book players to the tournament at once.
+export async function addFromBook(_: FormState, formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const { t } = await getT();
+  const tour = await tournamentOrThrow(int(formData, "tournamentId", 0));
+  const ids = formData.getAll("playerIds").map((v) => parseInt(String(v), 10)).filter(Boolean);
+  if (!ids.length) return { error: t("errPickPlayers") };
+  const teamId = tour.teamsEnabled ? await resolveTeam(tour.id, formData) : null;
+  let added = 0;
+  for (const id of ids) {
+    const e = await findEntry(tour.id, id);
+    if (e?.active) continue;
+    if (e) await db.update(entries).set({ active: true, teamId }).where(eq(entries.id, e.id));
+    else await db.insert(entries).values({ tournamentId: tour.id, playerId: id, teamId });
+    added++;
+  }
+  revalidatePath(`/admin/t/${tour.slug}`, "layout");
+  return { ok: t("addedFromBook", { n: added }) };
 }
 
 export async function updatePlayer(_: FormState, formData: FormData): Promise<FormState> {
@@ -217,7 +255,23 @@ export async function updatePlayer(_: FormState, formData: FormData): Promise<Fo
   if (rawPhone && !phone) return keep(formData, t("errPhone"));
   if (phone) {
     const [other] = await db.select().from(players).where(eq(players.phone, phone)).limit(1);
-    if (other && other.id !== entry.playerId) return keep(formData, t("errPhoneOther", { name: playerName(other) }));
+    if (other && other.id !== entry.playerId) {
+      // The number is already in the address book (e.g. from another tournament).
+      const already = await findEntry(tour.id, other.id);
+      if (already?.active) return keep(formData, t("errPhoneInTournament", { name: playerName(other) }));
+      if (normName(other.firstName, other.lastName) !== normName(firstName, lastName)) {
+        return keep(formData, t("errPhoneBelongs", { name: playerName(other) }));
+      }
+      // Same person: point this spot to their address-book record and drop the duplicate.
+      const oldPlayerId = entry.playerId;
+      if (already) await db.delete(entries).where(eq(entries.id, already.id));
+      await db.update(entries).set({ playerId: other.id }).where(eq(entries.id, entry.id));
+      const stillUsed = await db.select({ id: entries.id }).from(entries).where(eq(entries.playerId, oldPlayerId)).limit(1);
+      if (!stillUsed.length) await db.delete(players).where(eq(players.id, oldPlayerId)).catch(() => {});
+      if (tour.teamsEnabled) await db.update(entries).set({ teamId: await resolveTeam(tour.id, formData) }).where(eq(entries.id, entry.id));
+      revalidatePath(`/admin/t/${tour.slug}`, "layout");
+      redirect(`/admin/t/${tour.slug}/players?msg=playerLinked`);
+    }
   }
   await db
     .update(players)
@@ -244,8 +298,10 @@ export async function replacePlayer(_: FormState, formData: FormData): Promise<F
   if (player) {
     const e = await findEntry(tour.id, player.id);
     if (e?.active) return keep(formData, t("errPhoneInTournament", { name: playerName(player) }));
+    if (normName(player.firstName, player.lastName) !== normName(firstName, lastName)) {
+      return keep(formData, t("errPhoneBelongs", { name: playerName(player) }));
+    }
     if (e) await db.delete(entries).where(eq(entries.id, e.id)); // old inactive entry for the newcomer
-    [player] = await db.update(players).set({ firstName, lastName, updatedAt: new Date() }).where(eq(players.id, player.id)).returning();
   } else {
     [player] = await db.insert(players).values({ firstName, lastName, phone }).returning();
   }
@@ -307,6 +363,9 @@ export async function uploadPlayers(_: FormState, formData: FormData): Promise<F
       } else {
         [player] = await db.insert(players).values({ firstName: r.first, lastName: r.last, phone }).returning();
       }
+    } else if (!raw && (await findByName(r.first, r.last))) {
+      // No phone in the file, but the address book knows this person.
+      player = (await findByName(r.first, r.last))!;
     } else {
       // No usable phone: still add the player, flagged so the admin fixes it before the games start.
       // Re-uploads match them by name instead of creating duplicates.
