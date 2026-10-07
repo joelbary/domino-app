@@ -7,11 +7,13 @@ export type Standing = {
   pts: number; pf: number; pa: number; diff: number;
 };
 
-// Order: 1) W/L/T points (3/1/0), 2) point difference, 3) points for.
-// Players equal on all three share the rank (1, 2, 2, 4…).
-export function computeStandings(entryIds: number[], games: GameResult[], tieBreak?: (a: number, b: number) => number): Standing[] {
+// Order: 1) W/L/T points (3/1/0), 2) point difference, 3) points for, 4) fewest points against,
+// 5) head-to-head among the tied players (games where they were opponents), 6) a fixed draw.
+// Every player gets their own rank, so the Swiss seating always has an exact order.
+export function computeStandings(entryIds: number[], games: GameResult[], draw?: (entryId: number) => number): Standing[] {
   const map = new Map<number, Standing>();
   for (const id of entryIds) map.set(id, { entryId: id, rank: 0, played: 0, w: 0, l: 0, t: 0, pts: 0, pf: 0, pa: 0, diff: 0 });
+  const h2h = new Map<string, number>(); // "x>y" → how many times x beat y as opponents
   for (const g of games) {
     const sides: [number[], number, number][] = [[g.a, g.scoreA, g.scoreB], [g.b, g.scoreB, g.scoreA]];
     for (const [ids, mine, theirs] of sides) {
@@ -26,15 +28,35 @@ export function computeStandings(entryIds: number[], games: GameResult[], tieBre
         else s.l++;
       }
     }
+    if (g.scoreA !== g.scoreB) {
+      const [win, lose] = g.scoreA > g.scoreB ? [g.a, g.b] : [g.b, g.a];
+      for (const x of win) for (const y of lose) h2h.set(`${x}>${y}`, (h2h.get(`${x}>${y}`) ?? 0) + 1);
+    }
   }
   const list = [...map.values()];
   for (const s of list) s.diff = s.pf - s.pa;
-  const cmp = (x: Standing, y: Standing) => y.pts - x.pts || y.diff - x.diff || y.pf - x.pf;
-  list.sort((x, y) => cmp(x, y) || (tieBreak ? tieBreak(x.entryId, y.entryId) : x.entryId - y.entryId));
-  list.forEach((s, i) => {
-    s.rank = i > 0 && cmp(list[i - 1], s) === 0 ? list[i - 1].rank : i + 1;
-  });
-  return list;
+  const cmp = (x: Standing, y: Standing) => y.pts - x.pts || y.diff - x.diff || y.pf - x.pf || x.pa - y.pa;
+  const drawOf = (id: number) => (draw ? draw(id) : id);
+  list.sort((x, y) => cmp(x, y) || drawOf(x.entryId) - drawOf(y.entryId));
+  // Head-to-head inside each group that is tied on everything above.
+  const out: Standing[] = [];
+  for (let i = 0; i < list.length; ) {
+    let j = i + 1;
+    while (j < list.length && cmp(list[i], list[j]) === 0) j++;
+    const group = list.slice(i, j);
+    if (group.length > 1) {
+      const net = new Map(group.map((s) => [s.entryId, 0]));
+      for (const x of group) for (const y of group) {
+        if (x === y) continue;
+        net.set(x.entryId, net.get(x.entryId)! + (h2h.get(`${x.entryId}>${y.entryId}`) ?? 0) - (h2h.get(`${y.entryId}>${x.entryId}`) ?? 0));
+      }
+      group.sort((x, y) => net.get(y.entryId)! - net.get(x.entryId)! || drawOf(x.entryId) - drawOf(y.entryId));
+    }
+    out.push(...group);
+    i = j;
+  }
+  out.forEach((s, i) => { s.rank = i + 1; });
+  return out;
 }
 
 export type TeamStanding = { teamId: number; rank: number; size: number; avg: number };

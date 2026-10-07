@@ -288,73 +288,56 @@ export function scheduleProblems(all: Table[], forbidden: Array<[number, number]
 }
 
 // Size of the top ("winners") pool: half the players, rounded UP to a multiple of 4.
-export function topPoolSize(n: number): number {
-  if (n <= 4) return n;
-  return Math.min(n, Math.ceil(n / 2 / 4) * 4);
-}
-
-// Seats one pool already sorted by rank (best first):
-// partners #1+#P, #2+#P-1, …; tables (1,P) vs (2,P-1), (3,P-2) vs (4,P-3), …
-export function seatPool(ranked: number[]): Table[] {
-  const P = ranked.length;
-  const pairs: [number, number][] = [];
-  for (let i = 0; i < P / 2; i++) pairs.push([ranked[i], ranked[P - 1 - i]]);
-  const tables: Table[] = [];
-  for (let i = 0; i < pairs.length; i += 2) tables.push([pairs[i][0], pairs[i][1], pairs[i + 1][0], pairs[i + 1][1]]);
-  return tables;
-}
-
-// A Swiss round from the current ranking (best first). Forbidden pairs are fixed by swapping
-// the offending player with the nearest-ranked player in the same pool at another table.
-export function swissRound(ranked: number[], forbidden: Array<[number, number]> = []): Table[] {
-  const top = topPoolSize(ranked.length);
-  const pools = [ranked.slice(0, top), ranked.slice(top)].filter((p) => p.length > 0);
-  const forbid = new Set(forbidden.map(([a, b]) => key(a, b)));
-  const out: Table[] = [];
-  for (const pool of pools) {
-    const tables = seatPool(pool);
-    const where = (id: number) => {
-      for (let ti = 0; ti < tables.length; ti++) {
-        const si = tables[ti].indexOf(id);
-        if (si >= 0) return [ti, si] as const;
-      }
-      return [-1, -1] as const;
-    };
-    const bad = (t: Table) => {
-      for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) if (forbid.has(key(t[i], t[j]))) return [i, j] as const;
-      return null;
-    };
-    for (let guard = 0; guard < 50; guard++) {
-      const ti = tables.findIndex((t) => bad(t));
-      if (ti < 0) break;
-      const [i, j] = bad(tables[ti])!;
-      // Move whichever of the two is not the "anchor" (the higher-ranked stays put).
-      const mover = pool.indexOf(tables[ti][i]) > pool.indexOf(tables[ti][j]) ? tables[ti][i] : tables[ti][j];
-      const rank = pool.indexOf(mover);
-      const candidates = pool
-        .map((id, r) => ({ id, d: Math.abs(r - rank) }))
-        .filter((c) => c.id !== mover && where(c.id)[0] !== ti)
-        .sort((a, b) => a.d - b.d);
-      let fixed = false;
-      for (const c of candidates) {
-        const [tj, sj] = where(c.id);
-        const [, si] = where(mover);
-        const A = tables[ti].slice() as Table;
-        const B = tables[tj].slice() as Table;
-        A[si] = c.id;
-        B[sj] = mover;
-        if (!bad(A) && !bad(B)) {
-          tables[ti] = A;
-          tables[tj] = B;
-          fixed = true;
-          break;
-        }
-      }
-      if (!fixed) break;
-    }
-    out.push(...tables);
+// How many times each pair were partners / opponents in the given tables.
+export function pairHistory(tables: Table[]) {
+  const partners = new Map<string, number>();
+  const opponents = new Map<string, number>();
+  const add = (m: Map<string, number>, x: number, y: number) => m.set(key(x, y), (m.get(key(x, y)) ?? 0) + 1);
+  for (const t of tables) {
+    add(partners, t[0], t[1]);
+    add(partners, t[2], t[3]);
+    for (const x of [t[0], t[1]]) for (const y of [t[2], t[3]]) add(opponents, x, y);
   }
-  return out;
+  return { partners, opponents };
+}
+
+// Splits four players into two teams: of the 3 possible splits, the one with the fewest repeated
+// partners, then the fewest repeated opponents; a random pick among splits that are still equal.
+export function bestSplit(four: number[], hist: ReturnType<typeof pairHistory>, rnd: () => number = Math.random): Table {
+  const [a, b, c, d] = four;
+  const options: Table[] = [[a, b, c, d], [a, c, b, d], [a, d, b, c]];
+  const n = (m: Map<string, number>, x: number, y: number) => m.get(key(x, y)) ?? 0;
+  const score = (t: Table) => {
+    const p = n(hist.partners, t[0], t[1]) + n(hist.partners, t[2], t[3]);
+    let o = 0;
+    for (const x of [t[0], t[1]]) for (const y of [t[2], t[3]]) o += n(hist.opponents, x, y);
+    return p * 1000 + o;
+  };
+  const scored = options.map((t) => ({ t, s: score(t) }));
+  const min = Math.min(...scored.map((x) => x.s));
+  const best = scored.filter((x) => x.s === min);
+  return best[Math.floor(rnd() * best.length)].t;
+}
+
+// Re-splits the teams at every table of a set of rounds, using everything played before
+// (and the earlier rounds of the set) as history. Who sits at each table doesn't change.
+export function splitTeams(rounds: Table[][], history: Table[], rnd: () => number = Math.random): Table[][] {
+  const seen = history.slice();
+  return rounds.map((round) => {
+    const hist = pairHistory(seen);
+    const out = round.map((t) => bestSplit(t, hist, rnd));
+    seen.push(...out);
+    return out;
+  });
+}
+
+// A Swiss round: the ranking (best first) is cut into tables of four in order — 1–4, 5–8, …
+// Nobody is moved to another table; history only decides the partners inside each table.
+export function swissRound(ranked: number[], history: Table[], rnd: () => number = Math.random): Table[] {
+  const hist = pairHistory(history);
+  const tables: Table[] = [];
+  for (let i = 0; i + 4 <= ranked.length; i += 4) tables.push(bestSplit(ranked.slice(i, i + 4), hist, rnd));
+  return tables;
 }
 
 // Swaps two players inside one round's tables.

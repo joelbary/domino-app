@@ -3,6 +3,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { entries, gameTables, players, rounds, tournaments } from "@/db/schema";
 import { computeStandings, type GameResult } from "@/lib/standings";
+import { drawOrder } from "@/lib/schedule";
 import { tournamentCols } from "@/lib/tournaments";
 
 export type TournamentResult = {
@@ -34,7 +35,7 @@ export async function allRecords(): Promise<Map<number, PlayerRecord>> {
       .map((x) => ({ round: roundIds.get(x.roundId)!, a: [x.a1, x.a2], b: [x.b1, x.b2], scoreA: x.scoreA!, scoreB: x.scoreB! }));
     const seated = new Set(games.flatMap((g) => [...g.a, ...g.b]));
     const ids = tEnts.filter((e) => e.active || seated.has(e.id)).map((e) => e.id);
-    const st = computeStandings(ids, games);
+    const st = computeStandings(ids, games, (id) => drawOrder(tour.id, id));
     const published = tour.resultsPublished;
     for (const s of st) {
       const e = tEnts.find((x) => x.id === s.entryId);
