@@ -6,18 +6,27 @@ import { requireOwner } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { formatPhone } from "@/lib/phone";
 import { playerById, playerRecord } from "@/lib/records";
-import { updateGlobalPlayer } from "../../admin-actions";
+import ConfirmSubmit from "@/components/ConfirmSubmit";
+import { normName } from "@/lib/directory";
+import { allPlayers } from "@/lib/records";
+import { deleteBookPlayer, mergeBookPlayers, updateGlobalPlayer } from "../../admin-actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function PlayerRecordPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PlayerRecordPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ msg?: string; err?: string }> }) {
   await requireOwner();
   const { id } = await params;
+  const { msg, err } = await searchParams;
   const p = await playerById(parseInt(id, 10));
   if (!p) notFound();
   const { t, lang } = await getT();
   const r = await playerRecord(p.id);
   const name = `${p.firstName} ${p.lastName}`.trim();
+  const key = normName(p.firstName, p.lastName);
+  const others = (await allPlayers()).filter((o) => o.id !== p.id);
+  // Same name first, so the likely duplicate is at the top of the list.
+  others.sort((a, b) => Number(normName(b.firstName, b.lastName) === key) - Number(normName(a.firstName, a.lastName) === key));
+  const okMsgs = ["playersMerged"], errMsgs = ["errHasGames", "errBothPlayed"];
   const pct = r && r.games ? Math.round((r.w / r.games) * 100) : 0;
   const stats: [string, string][] = [
     [t("tournamentsPlayed"), String(r?.tournaments ?? 0)],
@@ -32,6 +41,8 @@ export default async function PlayerRecordPage({ params }: { params: Promise<{ i
     <>
       <AdminBar title={name} sub={formatPhone(p.phone) || t("noPhone")} back={{ href: "/admin/players", label: t("addressBook") }} lang={lang} here={`/admin/players/${p.id}`} langLabel={t("langToggle")} />
       <main className="page">
+        {msg && okMsgs.includes(msg) && <div className="notice ok">{t(msg as "playersMerged")}</div>}
+        {err && errMsgs.includes(err) && <div className="notice bad" role="alert">{t(err as "errHasGames")}</div>}
         <section className="card stack">
           <h2>{t("allTime")}</h2>
           <div className="tiles" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
@@ -65,6 +76,26 @@ export default async function PlayerRecordPage({ params }: { params: Promise<{ i
             <label className="field">{t("phone")}<input type="tel" name="phone" defaultValue={formatPhone(p.phone)} /></label>
           </SimpleForm>
         </details>
+        <details className="card disclose" open={others.some((o) => normName(o.firstName, o.lastName) === key) || undefined}>
+          <summary>{t("mergeWith")}</summary>
+          <form action={mergeBookPlayers} className="stack">
+            <input type="hidden" name="keepId" value={p.id} />
+            <p className="help">{t("mergeHelp")}</p>
+            <label className="field">
+              <select name="dropId" required defaultValue="">
+                <option value="" disabled>—</option>
+                {others.map((o) => (
+                  <option key={o.id} value={o.id}>{`${o.firstName} ${o.lastName}`.trim()} · {formatPhone(o.phone) || t("noPhone")}</option>
+                ))}
+              </select>
+            </label>
+            <ConfirmSubmit message={t("mergeConfirm")} className="btn">{t("merge")}</ConfirmSubmit>
+          </form>
+        </details>
+        <form action={deleteBookPlayer} style={{ marginTop: 8 }}>
+          <input type="hidden" name="playerId" value={p.id} />
+          <ConfirmSubmit message={t("deleteFromBookConfirm")} className="btn danger small">{t("deleteFromBook")}</ConfirmSubmit>
+        </form>
       </main>
     </>
   );

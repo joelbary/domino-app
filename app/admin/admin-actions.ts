@@ -145,7 +145,6 @@ export async function uploadBook(_: FormState, formData: FormData): Promise<Form
   const { normalizePhone } = await import("@/lib/phone");
   const { players } = await import("@/db/schema");
   const { readTable, toPlayers } = await import("@/lib/import");
-  const { findByName } = await import("@/lib/directory");
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { error: t("errFile") };
   let table: unknown[][];
@@ -158,29 +157,48 @@ export async function uploadBook(_: FormState, formData: FormData): Promise<Form
   if ("error" in parsed) return { error: t(parsed.error) };
   let added = 0, updated = 0;
   const skipped: string[] = [];
+  const notes: string[] = [];
   for (const r of parsed.rows) {
     if (!r.first) { skipped.push(t("rowSkipped", { r: r.row, why: t("errFirst") })); continue; }
     const phone = r.phone ? normalizePhone(r.phone) : null;
     if (r.phone && !phone) { skipped.push(t("rowSkipped", { r: r.row, why: `${t("errPhone")} (${r.first} ${r.last})` })); continue; }
-    const byPhone = phone ? (await db.select().from(players).where(eq(players.phone, phone)).limit(1))[0] : undefined;
-    if (byPhone) {
-      if (byPhone.firstName !== r.first || byPhone.lastName !== r.last) {
-        await db.update(players).set({ firstName: r.first, lastName: r.last, updatedAt: new Date() }).where(eq(players.id, byPhone.id));
-        updated++;
-      }
+    if (phone) {
+      const { matchUpload } = await import("@/lib/merge");
+      const m = await matchUpload(phone, r.first, r.last);
+      if (m.created) added++;
+      else if (m.filledPhone || m.merged) updated++;
+      const name = `${m.player.firstName} ${m.player.lastName}`.trim();
+      if (m.nameDiffers) notes.push(t("nameKept", { r: r.row, file: `${r.first} ${r.last}`.trim(), name }));
+      if (m.merged) notes.push(t("dupMerged", { name }));
       continue;
     }
-    const byName = await findByName(r.first, r.last);
-    if (byName) {
-      if (phone && !byName.phone) {
-        await db.update(players).set({ phone, phoneNote: null, updatedAt: new Date() }).where(eq(players.id, byName.id));
-        updated++;
-      }
-      continue;
-    }
-    await db.insert(players).values({ firstName: r.first, lastName: r.last, phone });
+    const { normName } = await import("@/lib/directory");
+    const key = normName(r.first, r.last);
+    if ((await db.select().from(players)).some((p) => normName(p.firstName, p.lastName) === key)) continue;
+    await db.insert(players).values({ firstName: r.first, lastName: r.last, phone: null });
     added++;
   }
   revalidatePath("/admin/players");
-  return { ok: t("bookImportDone", { a: added, u: updated, s: skipped.length }), details: skipped };
+  return { ok: t("bookImportDone", { a: added, u: updated, s: skipped.length }), details: [...skipped, ...notes] };
+}
+
+export async function deleteBookPlayer(formData: FormData) {
+  await requireOwner();
+  const { deletePlayer } = await import("@/lib/merge");
+  const id = int(formData, "playerId");
+  const r = await deletePlayer(id);
+  revalidatePath("/admin", "layout");
+  if (r === "hasGames") redirect(`/admin/players/${id}?err=errHasGames`);
+  redirect("/admin/players?msg=playerDeleted");
+}
+
+export async function mergeBookPlayers(formData: FormData) {
+  await requireOwner();
+  const { mergePlayers } = await import("@/lib/merge");
+  const keep = int(formData, "keepId");
+  const drop = int(formData, "dropId");
+  const r = await mergePlayers(keep, drop);
+  revalidatePath("/admin", "layout");
+  if (r === "bothPlayed") redirect(`/admin/players/${keep}?err=errBothPlayed`);
+  redirect(`/admin/players/${keep}?msg=playersMerged`);
 }

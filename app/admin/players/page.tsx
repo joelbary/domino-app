@@ -7,12 +7,13 @@ import { requireOwner } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { formatPhone } from "@/lib/phone";
 import { allPlayers, allRecords } from "@/lib/records";
+import { normName } from "@/lib/directory";
 
 export const dynamic = "force-dynamic";
 
-export default async function DirectoryPage({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
+export default async function DirectoryPage({ searchParams }: { searchParams: Promise<{ sort?: string; msg?: string }> }) {
   await requireOwner();
-  const { sort = "name" } = await searchParams;
+  const { sort = "name", msg } = await searchParams;
   const { t, lang } = await getT();
   const [ps, recs] = await Promise.all([allPlayers(), allRecords()]);
   const rows = ps.map((p) => {
@@ -25,12 +26,29 @@ export default async function DirectoryPage({ searchParams }: { searchParams: Pr
   });
   if (sort === "wins") rows.sort((a, b) => b.wins - a.wins || b.games - a.games);
   if (sort === "tournaments") rows.sort((a, b) => b.tournaments - a.tournaments || b.wins - a.wins);
+  const groups = new Map<string, typeof ps>();
+  for (const p of ps) { const k = normName(p.firstName, p.lastName); groups.set(k, [...(groups.get(k) ?? []), p]); }
+  const dups = [...groups.values()].filter((g) => g.length > 1).flat();
   const sorts = [["name", t("sortName")], ["wins", t("sortWins")], ["tournaments", t("sortTournaments")]];
 
   return (
     <>
       <AdminBar title={t("addressBook")} sub={`${rows.length} ${t("playersPlural")}`} back={{ href: "/admin", label: t("backToAll") }} lang={lang} here="/admin/players" langLabel={t("langToggle")} />
       <main className="page">
+        {msg === "playerDeleted" && <div className="notice ok">{t("playerDeleted")}</div>}
+        {dups.length > 0 && (
+          <section className="card stack">
+            <h2>{t("duplicates")}</h2>
+            <p className="help">{t("duplicatesHelp")}</p>
+            <div className="list">
+              {dups.map((p) => (
+                <Link key={p.id} href={`/admin/players/${p.id}`} className="item" style={{ padding: "10px 14px" }}>
+                  <span className="main"><span className="name">{`${p.firstName} ${p.lastName}`.trim()}</span><span className="meta">{formatPhone(p.phone) || t("noPhone")}</span></span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
         <p className="help">{t("addressBookHelp")}</p>
         <div className="grid2 collapse" style={{ alignItems: "start" }}>
           <details className="card disclose">

@@ -342,6 +342,7 @@ export async function uploadPlayers(_: FormState, formData: FormData): Promise<F
 
   let added = 0, updated = 0, same = 0, noPhone = 0;
   const skipped: string[] = [];
+  const notes: string[] = [];
   const seen = new Set<string>();
   for (const r of parsed.rows) {
     const raw = String(r.phone ?? "").trim();
@@ -353,16 +354,12 @@ export async function uploadPlayers(_: FormState, formData: FormData): Promise<F
     let changed = false;
     if (phone) {
       seen.add(phone);
-      const [found] = await db.select().from(players).where(eq(players.phone, phone)).limit(1);
-      if (found) {
-        player = found;
-        if (player.firstName !== r.first || player.lastName !== r.last) {
-          [player] = await db.update(players).set({ firstName: r.first, lastName: r.last, updatedAt: new Date() }).where(eq(players.id, player.id)).returning();
-          changed = true;
-        }
-      } else {
-        [player] = await db.insert(players).values({ firstName: r.first, lastName: r.last, phone }).returning();
-      }
+      const { matchUpload } = await import("@/lib/merge");
+      const m = await matchUpload(phone, r.first, r.last);
+      player = m.player;
+      if (m.filledPhone || m.merged) changed = true;
+      if (m.nameDiffers) notes.push(t("nameKept", { r: r.row, file: `${r.first} ${r.last}`.trim(), name: `${player.firstName} ${player.lastName}`.trim() }));
+      if (m.merged) notes.push(t("dupMerged", { name: `${player.firstName} ${player.lastName}`.trim() }));
     } else if (!raw && (await findByName(r.first, r.last))) {
       // No phone in the file, but the address book knows this person.
       player = (await findByName(r.first, r.last))!;
@@ -402,7 +399,7 @@ export async function uploadPlayers(_: FormState, formData: FormData): Promise<F
   }
   revalidatePath(`/admin/t/${tour.slug}`, "layout");
   if (noPhone) skipped.unshift(t("importNoPhone", { n: noPhone }));
-  return { ok: t("importDone", { a: added, u: updated, k: same, s: skipped.length - (noPhone ? 1 : 0) }), details: skipped };
+  return { ok: t("importDone", { a: added, u: updated, k: same, s: skipped.length - (noPhone ? 1 : 0) }), details: [...skipped, ...notes] };
 }
 
 // ---------- teams ----------
