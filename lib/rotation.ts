@@ -302,8 +302,9 @@ export function pairHistory(tables: Table[]) {
 }
 
 // Splits four players into two teams: of the 3 possible splits, the one with the fewest repeated
-// partners, then the fewest repeated opponents; a random pick among splits that are still equal.
-export function bestSplit(four: number[], hist: ReturnType<typeof pairHistory>, rnd: () => number = Math.random): Table {
+// partners, then the fewest repeated opponents. Splits still equal: in Swiss (`balanced`, players in
+// rank order) the most even game — #1+#4 vs #2+#3, then #1+#3 vs #2+#4; otherwise a random pick.
+export function bestSplit(four: number[], hist: ReturnType<typeof pairHistory>, rnd: () => number = Math.random, balanced = false): Table {
   const [a, b, c, d] = four;
   const options: Table[] = [[a, b, c, d], [a, c, b, d], [a, d, b, c]];
   const n = (m: Map<string, number>, x: number, y: number) => m.get(key(x, y)) ?? 0;
@@ -316,6 +317,7 @@ export function bestSplit(four: number[], hist: ReturnType<typeof pairHistory>, 
   const scored = options.map((t) => ({ t, s: score(t) }));
   const min = Math.min(...scored.map((x) => x.s));
   const best = scored.filter((x) => x.s === min);
+  if (balanced) return best[best.length - 1].t; // options are listed least → most balanced
   return best[Math.floor(rnd() * best.length)].t;
 }
 
@@ -332,11 +334,12 @@ export function splitTeams(rounds: Table[][], history: Table[], rnd: () => numbe
 }
 
 // A Swiss round: the ranking (best first) is cut into tables of four in order — 1–4, 5–8, …
-// Nobody is moved to another table; history only decides the partners inside each table.
+// Nobody is moved to another table; history decides the partners inside each table, and when
+// history doesn't decide, the most balanced split is used.
 export function swissRound(ranked: number[], history: Table[], rnd: () => number = Math.random): Table[] {
   const hist = pairHistory(history);
   const tables: Table[] = [];
-  for (let i = 0; i + 4 <= ranked.length; i += 4) tables.push(bestSplit(ranked.slice(i, i + 4), hist, rnd));
+  for (let i = 0; i + 4 <= ranked.length; i += 4) tables.push(bestSplit(ranked.slice(i, i + 4), hist, rnd, true));
   return tables;
 }
 
