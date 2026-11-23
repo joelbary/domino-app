@@ -25,6 +25,7 @@ export default async function TournamentHub({ params }: { params: Promise<{ slug
     { href: `${base}/players`, title: t("players"), detail: `${n} · ${t("playersTile")}` },
     ...(tour.teamsEnabled ? [{ href: `${base}/teams`, title: t("teams"), detail: t("teamsTile", { n: tms.length }) }] : []),
     { href: `${base}/standings`, title: `${t("standings")} · ${t("results")}`, detail: tour.resultsPublished ? t("resultsPublishedMsg") : t("publishResults") },
+    { href: `${base}/message`, title: t("messagePlayersTitle"), detail: t("messagePlayersTile") },
     { href: `${base}/export`, title: t("downloadExcel"), detail: "Excel (.xlsx)" },
     { href: `${base}/settings`, title: t("settings"), detail: t("settingsTile") },
     { href: `${base}/rules`, title: t("rules"), detail: tour.rulesText || tour.hasRulesFile ? t("rulesTile") : t("usingGeneral") },
