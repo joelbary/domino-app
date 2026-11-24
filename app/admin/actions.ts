@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -430,6 +430,37 @@ export async function renameTeam(formData: FormData) {
   }
   revalidatePath(`/admin/t/${tour.slug}`, "layout");
   redirect(`/admin/t/${tour.slug}/teams`);
+}
+
+// Splits everyone without a team into `count` new teams, at random and as evenly as possible
+// (sizes differ by at most 1). New teams continue the numbering: 1, 2, 3 exist → 4, 5…
+export async function randomTeams(formData: FormData) {
+  await requireAdmin();
+  const tour = await tournamentOrThrow(int(formData, "tournamentId", 0));
+  const back = `/admin/t/${tour.slug}/teams`;
+  const loose = await db
+    .select({ id: entries.id })
+    .from(entries)
+    .where(and(eq(entries.tournamentId, tour.id), eq(entries.active, true), isNull(entries.teamId)));
+  const count = Math.min(int(formData, "count", 0), loose.length);
+  if (count < 1) redirect(back);
+  const ids = loose.map((e) => e.id);
+  for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+  const existing = await db.select({ name: teams.name }).from(teams).where(eq(teams.tournamentId, tour.id));
+  const taken = new Set(existing.map((x) => x.name.trim().toLowerCase()));
+  let next = Math.max(existing.length, ...existing.map((x) => (/^\d+$/.test(x.name.trim()) ? parseInt(x.name, 10) : 0))) + 1;
+  await db.transaction(async (tx) => {
+    for (let k = 0; k < count; k++) {
+      while (taken.has(String(next))) next++;
+      const [tm] = await tx.insert(teams).values({ tournamentId: tour.id, name: String(next) }).returning();
+      taken.add(String(next));
+      next++;
+      const members = ids.filter((_, i) => i % count === k);
+      if (members.length) await tx.update(entries).set({ teamId: tm.id }).where(inArray(entries.id, members));
+    }
+  });
+  revalidatePath(`/admin/t/${tour.slug}`, "layout");
+  redirect(`${back}?msg=randomTeamsDone&n=${count}`);
 }
 
 export async function deleteTeam(formData: FormData) {

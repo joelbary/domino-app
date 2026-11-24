@@ -17,6 +17,7 @@ export default async function MessagePage({ params }: { params: Promise<{ slug: 
     ? tour.eventDate.toLocaleDateString(lang === "es" ? "es" : "en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" })
     : "";
   const defaultMessage = t("defaultReminder", { tournament: tour.name, date: date ? (lang === "es" ? `el ${date}` : `on ${date}`) : t("reminderSoon"), link: `https://domino.joelbary.com/${tour.slug}` });
+  const keys = ["message", "messageHelp", "groupTitle", "groupHelp", "groupBtn", "oneByOne", "oneByOneHelp", "whatsapp", "text", "sent", "progress", "copyNumbers", "copied", "resetSent", "noPhoneList", "noPlayers"] as const;
   const labels = Object.fromEntries(keys.map((k) => [k, t(`msg_${k}` as Parameters<typeof t>[0])])) as Record<(typeof keys)[number], string>;
   return (
     <>

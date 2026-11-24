@@ -7,24 +7,35 @@ import ConfirmSubmit from "@/components/ConfirmSubmit";
 import { getT } from "@/lib/i18n";
 import { formatPhone } from "@/lib/phone";
 import { listEntries, listTeams } from "@/lib/tournaments";
-import { addTeam, deleteTeam, renameTeam } from "../../../actions";
+import { addTeam, deleteTeam, randomTeams, renameTeam } from "../../../actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function TeamsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ err?: string }> }) {
+export default async function TeamsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ err?: string; msg?: string; n?: string }> }) {
   const { slug } = await params;
-  const { err } = await searchParams;
+  const { err, msg, n: made } = await searchParams;
   const { session, tour } = await adminTournament(slug);
   const { t, lang } = await getT();
   const base = `/admin/t/${tour.slug}`;
   const [tms, ents] = await Promise.all([listTeams(tour.id), listEntries(tour.id)]);
   const noTeam = ents.filter((e) => !e.teamId);
+  // Choices for splitting the players without a team: k teams with sizes as even as possible.
+  const L = noTeam.length;
+  const sizes = tms.map((tm) => ents.filter((e) => e.teamId === tm.id).length).filter((x) => x > 0);
+  const target = sizes.length ? sizes.reduce((a, b) => a + b, 0) / sizes.length : (tour.teamMinSize + tour.teamMaxSize) / 2;
+  const maxK = Math.max(1, Math.floor(L / 2));
+  const suggested = Math.min(maxK, Math.max(1, Math.round(L / target)));
+  const choices = Array.from({ length: maxK }, (_, i) => {
+    const k = i + 1, lo = Math.floor(L / k), hi = Math.ceil(L / k);
+    return { k, label: t("splitOption", { k, size: lo === hi ? String(lo) : `${lo}–${hi}` }), off: lo < tour.teamMinSize || hi > tour.teamMaxSize };
+  });
 
   return (
     <>
       <AdminBar title={t("teamsTitle")} sub={tour.name} back={{ href: base, label: t("backToTournament") }} lang={lang} here={`${base}/teams`} langLabel={t("langToggle")} />
       <main className="page">
         {!tour.teamsEnabled && <div className="notice warn">{t("teamsOff")}</div>}
+        {msg === "randomTeamsDone" && <div className="notice ok">{t("randomTeamsDone", { n: made ?? "" })}</div>}
         {err === "errTeamExists" && <div className="notice bad" role="alert">{t("errTeamExists")}</div>}
         <section className="card">
           <AddTeamForm action={addTeam} tournamentId={tour.id} labels={{ teamName: t("teamName"), addTeam: t("addTeam") }} />
@@ -74,6 +85,19 @@ export default async function TeamsPage({ params, searchParams }: { params: Prom
         {noTeam.length > 0 && tour.teamsEnabled && (
           <section className="card">
             <h2>{t("unassigned")} · {noTeam.length}</h2>
+            {L >= 2 && (
+              <form action={randomTeams} className="stack" style={{ margin: "10px 0 14px", padding: 12, background: "var(--ground)", borderRadius: 12 }}>
+                <input type="hidden" name="tournamentId" value={tour.id} />
+                <strong>{t("splitTitle")}</strong>
+                <p className="help">{t("splitHelp", { n: L })}</p>
+                <label className="field">{t("splitHowMany")}
+                  <select name="count" defaultValue={suggested}>
+                    {choices.map((c) => <option key={c.k} value={c.k}>{c.label}{c.off ? ` ⚠ ${t("splitOutside", { a: tour.teamMinSize, b: tour.teamMaxSize })}` : ""}</option>)}
+                  </select>
+                </label>
+                <ConfirmSubmit message={t("splitConfirm", { n: L })} className="btn">{t("splitBtn")}</ConfirmSubmit>
+              </form>
+            )}
             <div className="list" style={{ marginTop: 8 }}>
               {noTeam.map((m) => (
                 <Link key={m.entryId} href={`${base}/players/${m.entryId}`} className="item" style={{ background: "var(--ground)" }}>
