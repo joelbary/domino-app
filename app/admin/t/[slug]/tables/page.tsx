@@ -31,7 +31,32 @@ export default async function TablesPage({ params, searchParams }: {
   const [all, names, active, forbidden] = await Promise.all([loadRounds(tour.id), entryNames(tour.id), activeEntryIds(tour.id), forbiddenPairs(tour)]);
   const nameOf = (id: number) => names.get(id)?.name ?? "?";
   const split = await standbySplit(tour.id);
-  const waitNames = split.wait.map((e) => `${e.first} ${e.last}`.trim()).join(", ");
+  // Big count of who plays, and the stand-by list underneath (in sign-up order).
+  const playStat = (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+      <span style={{ fontFamily: "var(--display)", fontWeight: 700, fontSize: 64, lineHeight: 1, color: "var(--felt)" }}>{split.play.length}</span>
+      <span style={{ display: "grid" }}>
+        <strong style={{ fontSize: 18 }}>{t("rotPlayers")}</strong>
+        <span className="help">{t("rotTables", { n: split.play.length / 4 })} · {t("rotSignedUp", { n: split.all.length })}</span>
+      </span>
+    </div>
+  );
+  const standbyList = split.wait.length > 0 && (
+    <div className="stack" style={{ gap: 8 }}>
+      <h3 style={{ margin: 0, fontSize: 18 }}>{t("standbyListTitle")} · {split.wait.length}</h3>
+      <div className="list">
+        {split.wait.map((e, i) => (
+          <Link key={e.id} href={`${base}/players/${e.id}`} className="item" style={{ padding: "10px 14px" }}>
+            <span className="main">
+              <span className="name">{i + 1}. {`${e.first} ${e.last}`.trim()}</span>
+              {i === 0 && <span className="meta">{t("standbyNext")}</span>}
+            </span>
+          </Link>
+        ))}
+      </div>
+      <p className="help">{t("standbyRules")}</p>
+    </div>
+  );
   const missingPhones = (await listEntries(tour.id)).filter((e) => !e.phone).length;
   const liveRound = all.find((r) => r.status === "LIVE")?.number;
   const selected = parseInt(sp.r ?? "", 10) || liveRound || 1;
@@ -64,18 +89,17 @@ export default async function TablesPage({ params, searchParams }: {
           {notices}
           <section className="card stack">
             <h2>{t("noRotation")}</h2>
+            {split.play.length >= 4 ? playStat : <div className="notice warn">{t("errCount")} ({split.all.length})</div>}
+            {split.play.length >= 4 && split.wait.length > 0 && <p className="help">{t("rotationWithStandby", { k: split.wait.length })}</p>}
             <p className="help">{t("createRotationHelp", { n: randomRoundCount(tour) })}</p>
             {tour.rotationMode === "SWISS" && <p className="help">{t("swissLater", { r: tour.randomRoundsFirst + 1, p: tour.randomRoundsFirst })}</p>}
-            {split.play.length < 4 && <div className="notice warn">{t("errCount")} ({split.all.length})</div>}
-            {split.play.length >= 4 && split.wait.length > 0 && (
-              <div className="notice warn">{t("rotationWithStandby", { n: split.play.length, tables: split.play.length / 4, k: split.wait.length, names: waitNames })}</div>
-            )}
             <form action={generateRotation}>
               <input type="hidden" name="tournamentId" value={tour.id} />
               <button className="btn big block" disabled={split.play.length < 4}>
                 {split.wait.length ? t("createRotationN", { n: split.play.length }) : t("createRotation")}
               </button>
             </form>
+            {standbyList}
           </section>
         </main>
       </>
@@ -103,14 +127,18 @@ export default async function TablesPage({ params, searchParams }: {
           // offer to redo the rotation with the new highest multiple of 4.
           const want = new Set(split.play.map((e) => e.id));
           const differs = want.size !== seated.size || [...want].some((id) => !seated.has(id));
-          if (!differs && !rosterChanged) return null;
+          if (!differs && !rosterChanged) return split.wait.length > 0 && !anyScore ? <section className="card stack">{standbyList}</section> : null;
           if (anyScore) return rosterChanged ? <div className="notice warn">{t("rosterChanged", { a: seated.size, b: active.length })}</div> : null;
           return (
-            <form action={generateRotation} className="notice warn stack">
-              <input type="hidden" name="tournamentId" value={tour.id} />
-              <span>{t("redoRotationHelp", { a: seated.size, n: split.play.length, k: split.wait.length })}{split.wait.length ? ` ${t("standbyNames", { names: waitNames })}` : ""}</span>
-              <ConfirmSubmit message={t("redoRotationConfirm", { n: split.play.length })} className="btn">{t("redoRotationBtn", { n: split.play.length })}</ConfirmSubmit>
-            </form>
+            <section className="card stack" style={{ borderLeft: "4px solid var(--amber, #c98a00)" }}>
+              {playStat}
+              <p className="help">{t("redoRotationHelp", { a: seated.size, n: split.play.length })}</p>
+              <form action={generateRotation}>
+                <input type="hidden" name="tournamentId" value={tour.id} />
+                <ConfirmSubmit message={t("redoRotationConfirm", { n: split.play.length })} className="btn big block">{t("redoRotationBtn", { n: split.play.length })}</ConfirmSubmit>
+              </form>
+              {standbyList}
+            </section>
           );
         })()}
         <p className="help">{problems.repeats ? t("repeatsTotal", { n: problems.repeats }) : t("repeatsNone")}</p>
