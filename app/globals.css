@@ -230,3 +230,10 @@ table.standings td.move { width: 30px; font-size: 11px; }
 .home-btn { width: 40px; height: 40px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; color: var(--paper); background: rgba(0, 0, 0, 0.22); flex: none; }
 .home-btn:hover { color: var(--paper); background: rgba(0, 0, 0, 0.35); }
 @media (max-width: 380px) { .ptop .plogo { display: none; } }
+
+/* Printing the QR sign: only the poster, centered, no app chrome. */
+@media print {
+  .no-print, .adminbar { display: none !important; }
+  body { background: #fff !important; }
+  .qr-poster { box-shadow: none !important; border: 0 !important; background: #fff !important; }
+}

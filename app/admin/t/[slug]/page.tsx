@@ -31,6 +31,7 @@ export default async function TournamentHub({ params }: { params: Promise<{ slug
     { href: `${base}/settings`, title: t("settings"), detail: t("settingsTile") },
     { href: `${base}/rules`, title: t("rules"), detail: tour.rulesText || tour.hasRulesFile ? t("rulesTile") : t("usingGeneral") },
     { href: `${base}/admins`, title: t("coAdmins"), detail: t("coAdminsTile", { n: coAdminCount }) },
+    { href: `${base}/qr`, title: t("qrTitle"), detail: t("qrTile") },
     { href: `/${tour.slug}`, title: t("publicPage"), detail: `domino.joelbary.com/${tour.slug}` },
   ];
   const later: string[] = [];
