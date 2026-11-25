@@ -207,7 +207,7 @@ export function ReplaceForm({ action, tournamentId, entryId, labels }: {
   );
 }
 
-type Row = { entryId: number; name: string; phone: string; team: string | null };
+type Row = { entryId: number; name: string; phone: string; team: string | null; standby?: boolean };
 
 export function PlayerList({ rows, base, labels, initialNoPhone = false }: { rows: Row[]; base: string; labels: Labels; initialNoPhone?: boolean }) {
   const [q, setQ] = useState("");
@@ -233,7 +233,7 @@ export function PlayerList({ rows, base, labels, initialNoPhone = false }: { row
         {shown.map((r) => (
           <Link key={r.entryId} href={`${base}/players/${r.entryId}`} className="item">
             <span className="main">
-              <span className="name">{r.name}</span>
+              <span className="name">{r.name}{r.standby && <span className="pill warn" style={{ fontSize: 11, padding: "2px 8px", marginLeft: 8 }}>{labels.standby}</span>}</span>
               <span className="meta">
                 {r.phone || <span className="pill bad" style={{ fontSize: 11, padding: "2px 8px" }}>{labels.noPhone}</span>}
                 {r.team ? ` · ${labels.team} ${r.team}` : ""}

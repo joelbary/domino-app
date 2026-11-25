@@ -18,7 +18,7 @@ export type PlayerRecord = {
 // All-time records from every tournament. Final places only count once results are published.
 export async function allRecords(): Promise<Map<number, PlayerRecord>> {
   const tours = await db.select(tournamentCols).from(tournaments).orderBy(asc(tournaments.eventDate));
-  const ents = await db.select({ id: entries.id, tournamentId: entries.tournamentId, playerId: entries.playerId, active: entries.active }).from(entries);
+  const ents = await db.select({ id: entries.id, tournamentId: entries.tournamentId, playerId: entries.playerId, active: entries.active, standby: entries.standby }).from(entries);
   const rs = await db.select().from(rounds);
   const ts = rs.length ? await db.select().from(gameTables).where(inArray(gameTables.roundId, rs.map((r) => r.id))) : [];
   const out = new Map<number, PlayerRecord>();
@@ -34,7 +34,7 @@ export async function allRecords(): Promise<Map<number, PlayerRecord>> {
       .filter((x) => roundIds.has(x.roundId) && x.status === "CONFIRMED" && x.scoreA !== null && x.scoreB !== null)
       .map((x) => ({ round: roundIds.get(x.roundId)!, a: [x.a1, x.a2], b: [x.b1, x.b2], scoreA: x.scoreA!, scoreB: x.scoreB! }));
     const seated = new Set(games.flatMap((g) => [...g.a, ...g.b]));
-    const ids = tEnts.filter((e) => e.active || seated.has(e.id)).map((e) => e.id);
+    const ids = tEnts.filter((e) => (e.active && !e.standby) || seated.has(e.id)).map((e) => e.id);
     const st = computeStandings(ids, games, (id) => drawOrder(tour.id, id));
     const published = tour.resultsPublished;
     for (const s of st) {

@@ -42,7 +42,7 @@ export async function myTournaments(playerId: number) {
       id: tournaments.id, name: tournaments.name, slug: tournaments.slug, status: tournaments.status,
       eventDate: tournaments.eventDate, gamesCount: tournaments.gamesCount, entryId: entries.id,
       resultsPublished: tournaments.resultsPublished, updatedAt: tournaments.updatedAt,
-      playerCount: sql<number>`(select count(*)::int from ${entries} e2 where e2.tournament_id = ${tournaments.id} and e2.active)`,
+      playerCount: sql<number>`(select count(*)::int from ${entries} e2 where e2.tournament_id = ${tournaments.id} and e2.active and not e2.standby)`,
     })
     .from(entries)
     .innerJoin(tournaments, eq(entries.tournamentId, tournaments.id))

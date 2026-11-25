@@ -10,7 +10,7 @@ export type RoundRow = typeof rounds.$inferSelect;
 export type TableRow = typeof gameTables.$inferSelect;
 
 export async function activeEntryIds(tournamentId: number): Promise<number[]> {
-  const rows = await db.select({ id: entries.id }).from(entries).where(and(eq(entries.tournamentId, tournamentId), eq(entries.active, true)));
+  const rows = await db.select({ id: entries.id }).from(entries).where(and(eq(entries.tournamentId, tournamentId), eq(entries.active, true), eq(entries.standby, false)));
   return rows.map((r) => r.id);
 }
 
@@ -126,7 +126,7 @@ export async function teamTable(tournamentId: number, rankOf: Map<number, number
   const rows = await db
     .select({ id: entries.id, teamId: entries.teamId })
     .from(entries)
-    .where(and(eq(entries.tournamentId, tournamentId), eq(entries.active, true)));
+    .where(and(eq(entries.tournamentId, tournamentId), eq(entries.active, true), eq(entries.standby, false)));
   const members = new Map<number, number[]>();
   for (const r of rows) if (r.teamId) members.set(r.teamId, [...(members.get(r.teamId) ?? []), r.id]);
   return teamStandings(members, rankOf);

@@ -39,7 +39,7 @@ export async function listTournaments() {
       rotationMode: tournaments.rotationMode,
       randomRoundsFirst: tournaments.randomRoundsFirst,
       eventDate: tournaments.eventDate,
-      playerCount: sql<number>`(select count(*)::int from ${entries} where ${entries.tournamentId} = ${tournaments.id} and ${entries.active})`,
+      playerCount: sql<number>`(select count(*)::int from ${entries} where ${entries.tournamentId} = ${tournaments.id} and ${entries.active} and not ${entries.standby})`,
     })
     .from(tournaments)
     .orderBy(sql`${tournaments.eventDate} desc nulls last`, sql`${tournaments.createdAt} desc`);
@@ -55,6 +55,7 @@ export async function listEntries(tournamentId: number) {
       phone: players.phone,
       teamId: entries.teamId,
       teamName: teams.name,
+      standby: entries.standby,
     })
     .from(entries)
     .innerJoin(players, eq(entries.playerId, players.id))

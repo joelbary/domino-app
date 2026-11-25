@@ -1,0 +1,1 @@
+ALTER TABLE "entries" ADD COLUMN "standby" boolean DEFAULT false NOT NULL;

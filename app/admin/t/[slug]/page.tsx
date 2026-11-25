@@ -15,7 +15,8 @@ export default async function TournamentHub({ params }: { params: Promise<{ slug
   const { session, tour } = await adminTournament(slug);
   const { t, lang } = await getT();
   const [ents, tms, round] = await Promise.all([listEntries(tour.id), listTeams(tour.id), currentRound(tour.id)]);
-  const n = ents.length;
+  const n = ents.filter((e) => !e.standby).length;
+  const waiting = ents.length - n;
   const coAdminCount = (await db.select({ id: tournamentAdmins.id }).from(tournamentAdmins).where(eq(tournamentAdmins.tournamentId, tour.id))).length + (tour.createdByAdminId ? 1 : 0);
   const rem = n % 4;
   const base = `/admin/t/${tour.slug}`;
@@ -45,11 +46,25 @@ export default async function TournamentHub({ params }: { params: Promise<{ slug
       <main className="page">
         <div className={`notice ${n > 0 && rem === 0 ? "ok" : "warn"}`}>
           {n > 0 && rem === 0 ? t("multipleOf4Ok", { n }) : t("multipleOf4Need", { n, k: 4 - rem, r: rem })}
+          {waiting > 0 && ` ${t("standbyCount", { n: waiting })}`}
         </div>
         {ents.some((e) => !e.phone) && (
           <Link href={`${base}/players?nophone=1`} className="notice bad" style={{ textDecoration: "none" }}>
             {t("noPhoneWarn", { n: ents.filter((e) => !e.phone).length })} {t("showNoPhone")} →
           </Link>
+        )}
+        {waiting > 0 && (
+          <section className="card stack">
+            <h2>{t("standbyTitle")} · {waiting}/3</h2>
+            <div className="list">
+              {ents.filter((e) => e.standby).sort((a, b) => a.entryId - b.entryId).map((e, i) => (
+                <Link key={e.entryId} href={`${base}/players/${e.entryId}`} className="item" style={{ padding: "10px 14px" }}>
+                  <span className="main"><span className="name">{i + 1}. {`${e.firstName} ${e.lastName}`.trim()}</span>{i === 0 && <span className="meta">{t("standbyNext")}</span>}</span>
+                </Link>
+              ))}
+            </div>
+            <p className="help">{t("standbyHubHelp")}</p>
+          </section>
         )}
         <div className="tiles">
           {tiles.map((x) => x.href.endsWith("/export") ? (

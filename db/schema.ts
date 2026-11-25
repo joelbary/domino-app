@@ -65,6 +65,7 @@ export const entries = pgTable("entries", {
   playerId: integer("player_id").notNull().references(() => players.id),
   teamId: integer("team_id").references(() => teams.id, { onDelete: "set null" }),
   active: boolean("active").default(true).notNull(),
+  standby: boolean("standby").default(false).notNull(), // signed up, waiting for a spot (not seated)
 }, (t) => [uniqueIndex("entries_tournament_player").on(t.tournamentId, t.playerId)]);
 
 export const rounds = pgTable("rounds", {

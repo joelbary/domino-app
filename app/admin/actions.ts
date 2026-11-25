@@ -1,11 +1,11 @@
 "use server";
 
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { admins, entries, exclusions, players, rounds, teams, tournaments } from "@/db/schema";
+import { admins, entries, exclusions, gameTables, players, rounds, teams, tournaments } from "@/db/schema";
 import { adminTournamentById } from "@/lib/access";
 import { findByName, normName } from "@/lib/directory";
 import {
@@ -324,6 +324,85 @@ export async function removePlayer(formData: FormData) {
   redirect(`/admin/t/${tour.slug}/players?msg=playerRemoved`);
 }
 
+// ---------- stand-by (up to 3 players waiting for a spot) ----------
+const MAX_STANDBY = 3;
+
+async function seated(entryId: number) {
+  const [g] = await db
+    .select({ id: gameTables.id })
+    .from(gameTables)
+    .where(sql`${gameTables.a1} = ${entryId} or ${gameTables.a2} = ${entryId} or ${gameTables.b1} = ${entryId} or ${gameTables.b2} = ${entryId}`)
+    .limit(1);
+  return !!g;
+}
+
+// Moves one player to stand-by (or back to playing).
+export async function setStandby(formData: FormData) {
+  await requireAdmin();
+  const tour = await tournamentOrThrow(int(formData, "tournamentId", 0));
+  const entryId = int(formData, "entryId", 0);
+  const on = str(formData, "on") === "1";
+  const where = `/admin/t/${tour.slug}/players`;
+  if (on) {
+    const waiting = await db.select({ id: entries.id }).from(entries).where(and(eq(entries.tournamentId, tour.id), eq(entries.active, true), eq(entries.standby, true)));
+    if (waiting.length >= MAX_STANDBY) redirect(`${where}/${entryId}?err=errStandbyFull`);
+    if (await seated(entryId)) redirect(`${where}/${entryId}?err=errStandbySeated`);
+  }
+  await db.update(entries).set({ standby: on }).where(and(eq(entries.id, entryId), eq(entries.tournamentId, tour.id)));
+  revalidatePath(`/admin/t/${tour.slug}`, "layout");
+  redirect(`${where}?msg=${on ? "standbyOn" : "standbyOff"}`);
+}
+
+// Puts the last players who signed up on stand-by, so the rest is a multiple of 4.
+export async function standbyLast(formData: FormData) {
+  await requireAdmin();
+  const tour = await tournamentOrThrow(int(formData, "tournamentId", 0));
+  const where = `/admin/t/${tour.slug}/players`;
+  const rows = await db.select({ id: entries.id, standby: entries.standby }).from(entries)
+    .where(and(eq(entries.tournamentId, tour.id), eq(entries.active, true))).orderBy(asc(entries.id));
+  const playing = rows.filter((r) => !r.standby);
+  const room = MAX_STANDBY - (rows.length - playing.length);
+  const k = Math.min(playing.length % 4, room);
+  const free = [];
+  for (const r of playing.slice().reverse()) {
+    if (free.length >= k) break;
+    if (!(await seated(r.id))) free.push(r.id);
+  }
+  if (free.length) await db.update(entries).set({ standby: true }).where(inArray(entries.id, free));
+  revalidatePath(`/admin/t/${tour.slug}`, "layout");
+  redirect(`${where}?msg=standbyOn`);
+}
+
+// A player didn't come: a stand-by player takes their place (same seats at the tables).
+// The stand-by keeps their own team if they have one; otherwise they take the absent player's team.
+export async function replaceWithStandby(formData: FormData) {
+  await requireAdmin();
+  const tour = await tournamentOrThrow(int(formData, "tournamentId", 0));
+  const entryId = int(formData, "entryId", 0);
+  const where = `/admin/t/${tour.slug}/players`;
+  const [absent] = await db.select().from(entries).where(and(eq(entries.id, entryId), eq(entries.tournamentId, tour.id), eq(entries.standby, false))).limit(1);
+  // Always the first in line (the one who signed up earliest among those waiting).
+  const [sb] = await db.select().from(entries)
+    .where(and(eq(entries.tournamentId, tour.id), eq(entries.active, true), eq(entries.standby, true)))
+    .orderBy(asc(entries.id)).limit(1);
+  if (!absent || !sb) redirect(where);
+  // Only at the start: once any score is entered in this tournament, seats can't change person.
+  const [anyScore] = await db.select({ id: gameTables.id }).from(gameTables).innerJoin(rounds, eq(gameTables.roundId, rounds.id))
+    .where(and(eq(rounds.tournamentId, tour.id), sql`${gameTables.scoreA} is not null`)).limit(1);
+  if (anyScore) redirect(`${where}/${entryId}?err=errStandbyPlayed`);
+  await db.transaction(async (tx) => {
+    // The seat changes person, so the absent player's MPL settings must not carry over.
+    await tx.update(tournaments).set({ mplOwnerEntryId: null }).where(eq(tournaments.mplOwnerEntryId, absent.id));
+    await tx.update(tournaments).set({ mplOwnerEntryId: null }).where(eq(tournaments.mplOwnerEntryId, sb.id));
+    await tx.delete(exclusions).where(sql`${exclusions.entryAId} = ${absent.id} or ${exclusions.entryBId} = ${absent.id}`);
+    await tx.delete(entries).where(eq(entries.id, sb.id));
+    await tx.update(entries).set({ playerId: sb.playerId, teamId: sb.teamId ?? absent.teamId }).where(eq(entries.id, absent.id));
+  });
+  revalidatePath(`/admin/t/${tour.slug}`, "layout");
+  revalidatePath(`/${tour.slug}`);
+  redirect(`${where}?msg=standbyReplaced`);
+}
+
 export async function uploadPlayers(_: FormState, formData: FormData): Promise<FormState> {
   await requireAdmin();
   const { t } = await getT();
@@ -441,7 +520,7 @@ export async function randomTeams(formData: FormData) {
   const loose = await db
     .select({ id: entries.id })
     .from(entries)
-    .where(and(eq(entries.tournamentId, tour.id), eq(entries.active, true), isNull(entries.teamId)));
+    .where(and(eq(entries.tournamentId, tour.id), eq(entries.active, true), eq(entries.standby, false), isNull(entries.teamId)));
   const count = Math.min(int(formData, "count", 0), loose.length);
   if (count < 1) redirect(back);
   const ids = loose.map((e) => e.id);

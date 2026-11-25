@@ -64,7 +64,8 @@ export default async function TournamentTables({ params, searchParams }: { param
           <Link href={`${base}/score`} className="btn big block">{t("openScorecard")}</Link>
         </section>
       )}
-      {live && entry && !myTable && <div className="notice warn">{t("notInRound")}</div>}
+      {entry?.standby && <div className="notice warn">{t("youAreStandby")}</div>}
+      {live && entry && !entry.standby && !myTable && <div className="notice warn">{t("notInRound")}</div>}
 
       {rounds.length > 0 && (
         <>
