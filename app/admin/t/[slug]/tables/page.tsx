@@ -92,6 +92,7 @@ export default async function TablesPage({ params, searchParams }: {
             {split.play.length >= 4 ? playStat : <div className="notice warn">{t("errCount")} ({split.all.length})</div>}
             {split.play.length >= 4 && split.wait.length > 0 && <p className="help">{t("rotationWithStandby", { k: split.wait.length })}</p>}
             <p className="help">{t("createRotationHelp", { n: randomRoundCount(tour) })}</p>
+            {tour.teamsEnabled && <p className="help">{t("teammatesNotPartners")}</p>}
             {tour.rotationMode === "SWISS" && <p className="help">{t("swissLater", { r: tour.randomRoundsFirst + 1, p: tour.randomRoundsFirst })}</p>}
             <form action={generateRotation}>
               <input type="hidden" name="tournamentId" value={tour.id} />

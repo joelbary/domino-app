@@ -304,15 +304,18 @@ export function pairHistory(tables: Table[]) {
 // Splits four players into two teams: of the 3 possible splits, the one with the fewest repeated
 // partners, then the fewest repeated opponents. Splits still equal: in Swiss (`balanced`, players in
 // rank order) the most even game — #1+#4 vs #2+#3, then #1+#3 vs #2+#4; otherwise a random pick.
-export function bestSplit(four: number[], hist: ReturnType<typeof pairHistory>, rnd: () => number = Math.random, balanced = false): Table {
+export function bestSplit(four: number[], hist: ReturnType<typeof pairHistory>, rnd: () => number = Math.random, balanced = false, teamOf?: Map<number, number>): Table {
   const [a, b, c, d] = four;
   const options: Table[] = [[a, b, c, d], [a, c, b, d], [a, d, b, c]];
   const n = (m: Map<string, number>, x: number, y: number) => m.get(key(x, y)) ?? 0;
+  // Teammates as partners: avoided first (then repeat partners, then repeat opponents).
+  const mates = (x: number, y: number) => (teamOf && teamOf.has(x) && teamOf.get(x) === teamOf.get(y) ? 1 : 0);
   const score = (t: Table) => {
+    const tm = mates(t[0], t[1]) + mates(t[2], t[3]);
     const p = n(hist.partners, t[0], t[1]) + n(hist.partners, t[2], t[3]);
     let o = 0;
     for (const x of [t[0], t[1]]) for (const y of [t[2], t[3]]) o += n(hist.opponents, x, y);
-    return p * 1000 + o;
+    return tm * 1_000_000 + p * 1000 + o;
   };
   const scored = options.map((t) => ({ t, s: score(t) }));
   const min = Math.min(...scored.map((x) => x.s));
@@ -323,11 +326,11 @@ export function bestSplit(four: number[], hist: ReturnType<typeof pairHistory>, 
 
 // Re-splits the teams at every table of a set of rounds, using everything played before
 // (and the earlier rounds of the set) as history. Who sits at each table doesn't change.
-export function splitTeams(rounds: Table[][], history: Table[], rnd: () => number = Math.random): Table[][] {
+export function splitTeams(rounds: Table[][], history: Table[], rnd: () => number = Math.random, teamOf?: Map<number, number>): Table[][] {
   const seen = history.slice();
   return rounds.map((round) => {
     const hist = pairHistory(seen);
-    const out = round.map((t) => bestSplit(t, hist, rnd));
+    const out = round.map((t) => bestSplit(t, hist, rnd, false, teamOf));
     seen.push(...out);
     return out;
   });
@@ -336,11 +339,70 @@ export function splitTeams(rounds: Table[][], history: Table[], rnd: () => numbe
 // A Swiss round: the ranking (best first) is cut into tables of four in order — 1–4, 5–8, …
 // Nobody is moved to another table; history decides the partners inside each table, and when
 // history doesn't decide, the most balanced split is used.
-export function swissRound(ranked: number[], history: Table[], rnd: () => number = Math.random): Table[] {
+export function swissRound(ranked: number[], history: Table[], rnd: () => number = Math.random, teamOf?: Map<number, number>): Table[] {
   const hist = pairHistory(history);
   const tables: Table[] = [];
-  for (let i = 0; i + 4 <= ranked.length; i += 4) tables.push(bestSplit(ranked.slice(i, i + 4), hist, rnd, true));
+  for (let i = 0; i + 4 <= ranked.length; i += 4) tables.push(bestSplit(ranked.slice(i, i + 4), hist, rnd, true, teamOf));
   return tables;
+}
+
+// Random rounds: a table with 3+ players of the same team forces two teammates to be partners.
+// Swap one of them with a player at another table of the same round — choosing the swap that adds
+// the fewest repeat meetings (ideally none) and never seats an MPL pair together.
+export function separateTeammates(rounds: Table[][], history: Table[], teamOf: Map<number, number>, forbidden: Array<[number, number]> = []): Table[][] {
+  const forbid = new Set(forbidden.map(([a, b]) => key(a, b)));
+  const out = rounds.map((r) => r.map((t) => t.slice() as Table));
+  const met = meetings([...history, ...out.flat()]);
+  const cnt = (a: number, b: number) => met.get(key(a, b)) ?? 0;
+  const add = (a: number, b: number, d: number) => met.set(key(a, b), cnt(a, b) + d);
+  // How many teammates too many sit at a table (3 of a team = 1, 4 = 2).
+  const excess = (t: number[]) => {
+    const c = new Map<number, number>();
+    for (const x of t) if (teamOf.has(x)) c.set(teamOf.get(x)!, (c.get(teamOf.get(x)!) ?? 0) + 1);
+    let e = 0;
+    for (const v of c.values()) if (v >= 3) e += v - 2;
+    return e;
+  };
+  const crowded = (t: number[]) => excess(t) > 0;
+  // Cost change (repeat meetings) of p leaving X for Y and q the reverse.
+  const delta = (X: number[], sx: number, Y: number[], sy: number) => {
+    const p = X[sx], q = Y[sy];
+    let d = 0;
+    for (let i = 0; i < 4; i++) {
+      if (i !== sx) { if (forbid.has(key(q, X[i]))) return Infinity; d += cnt(q, X[i]) - (cnt(p, X[i]) - 1); }
+      if (i !== sy) { if (forbid.has(key(p, Y[i]))) return Infinity; d += cnt(p, Y[i]) - (cnt(q, Y[i]) - 1); }
+    }
+    return d;
+  };
+  for (const round of out) {
+    for (let guard = 0; guard < round.length * 4; guard++) {
+      const ta = round.findIndex(crowded);
+      if (ta < 0) break;
+      const A = round[ta];
+      let best: { sa: number; tb: number; sb: number; d: number; gain: number } | null = null;
+      for (let sa = 0; sa < 4; sa++) {
+        const tm = teamOf.get(A[sa]);
+        if (tm === undefined || A.filter((x) => teamOf.get(x) === tm).length < 3) continue;
+        for (let tb = 0; tb < round.length; tb++) {
+          if (tb === ta) continue;
+          for (let sb = 0; sb < 4; sb++) {
+            const A2 = A.slice(); const B2 = round[tb].slice();
+            [A2[sa], B2[sb]] = [B2[sb], A2[sa]];
+            const gain = excess(A) + excess(round[tb]) - excess(A2) - excess(B2);
+            if (gain <= 0) continue; // must reduce the crowding
+            const d = delta(A, sa, round[tb], sb);
+            if (!best || d < best.d || (d === best.d && gain > best.gain)) best = { sa, tb, sb, d, gain };
+          }
+        }
+      }
+      if (!best || best.d === Infinity) break; // can't be fixed (e.g. one huge team): leave it
+      const B = round[best.tb], p = A[best.sa], q = B[best.sb];
+      for (let i = 0; i < 4; i++) { if (i !== best.sa) add(p, A[i], -1); if (i !== best.sb) add(q, B[i], -1); }
+      A[best.sa] = q; B[best.sb] = p;
+      for (let i = 0; i < 4; i++) { if (i !== best.sa) add(q, A[i], 1); if (i !== best.sb) add(p, B[i], 1); }
+    }
+  }
+  return out;
 }
 
 // Swaps two players inside one round's tables.

@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { entries, exclusions, gameTables, players, rounds, teams, tournaments } from "@/db/schema";
-import { randomSchedule, scheduleProblems, splitTeams, swissRound, type Table } from "@/lib/rotation";
+import { randomSchedule, scheduleProblems, separateTeammates, splitTeams, swissRound, type Table } from "@/lib/rotation";
 import { computeStandings, teamStandings, type GameResult } from "@/lib/standings";
 
 type Tournament = Omit<typeof tournaments.$inferSelect, "logo" | "rulesFile">;
@@ -63,6 +63,14 @@ export function drawOrder(tournamentId: number, entryId: number) {
   return h >>> 0;
 }
 
+// Team of each playing entry (only when the tournament uses teams).
+export async function teamMap(tour: Tournament): Promise<Map<number, number> | undefined> {
+  if (!tour.teamsEnabled) return undefined;
+  const rows = await db.select({ id: entries.id, teamId: entries.teamId }).from(entries)
+    .where(and(eq(entries.tournamentId, tour.id), eq(entries.active, true)));
+  return new Map(rows.filter((r) => r.teamId !== null).map((r) => [r.id, r.teamId!]));
+}
+
 export function randomRoundCount(tour: Tournament) {
   return tour.rotationMode === "SWISS" ? Math.min(tour.randomRoundsFirst, tour.gamesCount) : tour.gamesCount;
 }
@@ -79,13 +87,17 @@ export async function buildRandomRounds(tour: Tournament, fromNumber = 1) {
   const wasLive = later.find((r) => r.status === "LIVE")?.number;
   if (later.length) await db.delete(rounds).where(inArray(rounds.id, later.map((r) => r.id)));
   if (count <= 0) return { repeats: 0 };
-  const result = randomSchedule({ players: ids, count, history, forbidden: await forbiddenPairs(tour), timeMs: 3000 });
-  const seated = splitTeams(result.rounds, history);
+  const forbidden = await forbiddenPairs(tour);
+  const teams = await teamMap(tour);
+  const result = randomSchedule({ players: ids, count, history, forbidden, timeMs: 3000 });
+  const placed = teams ? separateTeammates(result.rounds, history, teams, forbidden) : result.rounds;
+  const seated = splitTeams(placed, history, Math.random, teams);
+  const repeats = scheduleProblems([...history, ...seated.flat()], forbidden).repeats;
   for (let i = 0; i < seated.length; i++) {
     const n = fromNumber + i;
     await writeRound(tour.id, n, seated[i], { isSwiss: false, status: n === wasLive ? "LIVE" : "PENDING" });
   }
-  return { repeats: result.repeats };
+  return { repeats };
 }
 
 export const isFinal = (t: TableRow) => t.status === "CONFIRMED" && hasScore(t);
@@ -101,11 +113,14 @@ export async function reshuffleOneRound(tour: Tournament, number: number) {
   if (!round) throw new Error("GONE");
   if (round.tables.some(hasScore) || round.status === "CLOSED") throw new Error("SCORED");
   const history = all.filter((r) => r.number !== number).flatMap((r) => r.tables.map(seatsOf));
-  const result = randomSchedule({ players: ids, count: 1, history, forbidden: await forbiddenPairs(tour), timeMs: 3000 });
-  const [seated] = splitTeams([result.rounds[0]], history);
+  const forbidden = await forbiddenPairs(tour);
+  const teams = await teamMap(tour);
+  const result = randomSchedule({ players: ids, count: 1, history, forbidden, timeMs: 3000 });
+  const placed = teams ? separateTeammates([result.rounds[0]], history, teams, forbidden) : [result.rounds[0]];
+  const [seated] = splitTeams(placed, history, Math.random, teams);
   await db.delete(gameTables).where(eq(gameTables.roundId, round.id));
   await db.insert(gameTables).values(seated.map((t, i) => ({ roundId: round.id, number: i + 1, a1: t[0], a2: t[1], b1: t[2], b2: t[3] })));
-  return { repeats: result.repeats };
+  return { repeats: scheduleProblems([...history, ...seated], forbidden).repeats };
 }
 
 export async function standingsFor(tournamentId: number, uptoRound?: number) {
@@ -139,7 +154,7 @@ export async function buildSwissRound(tour: Tournament, number: number, status: 
   const ranked = standings.map((s) => s.entryId);
   if (ranked.length % 4 !== 0) throw new Error("COUNT");
   const history = all.filter((r) => r.number < number).flatMap((r) => r.tables.map(seatsOf));
-  const tables = swissRound(ranked, history);
+  const tables = swissRound(ranked, history, Math.random, await teamMap(tour));
   return writeRound(tour.id, number, tables, { isSwiss: true, status });
 }
 
