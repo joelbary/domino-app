@@ -3,6 +3,7 @@ import PhoneSignIn from "@/components/PhoneSignIn";
 import PlayerShell from "@/components/PlayerShell";
 import SwipeRounds from "@/components/SwipeRounds";
 import TablesList from "@/components/TablesList";
+import WelcomeCard from "@/components/WelcomeCard";
 import { playerSignOut } from "@/app/play-actions";
 import type { TKey } from "@/lib/i18n";
 import { playerView } from "@/lib/playerView";
@@ -63,6 +64,21 @@ export default async function TournamentTables({ params, searchParams }: { param
           </div>
           <Link href={`${base}/score`} className="btn big block">{t("openScorecard")}</Link>
         </section>
+      )}
+      {v.player && entry && (
+        <WelcomeCard
+          storeKey={`welcome:${tour.slug}:${entry.id}`}
+          title={t("welcomeTitle", { name: v.player.firstName, tournament: tour.name })}
+          steps={[
+            t("howTable"),
+            t("howScore"),
+            t("howSubmit"),
+            ...(tour.timerEnabled ? [t("howTimer")] : []),
+            t("howStandings"),
+          ]}
+          gotIt={t("welcomeGotIt")}
+          reopen={t("howItWorks")}
+        />
       )}
       {entry?.standby && <div className="notice warn">{t("youAreStandby")}</div>}
       {live && entry && !entry.standby && !myTable && <div className="notice warn">{t("notInRound")}</div>}
