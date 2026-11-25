@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { gameTables, hands, rounds, tournaments } from "@/db/schema";
 import { adminTournamentById } from "@/lib/access";
-import { buildRandomRounds, buildSwissRound, hasScore, isFinal, loadRounds, reshuffleOneRound } from "@/lib/schedule";
+import { applyStandbySplit, buildRandomRounds, buildSwissRound, hasScore, isFinal, loadRounds, reshuffleOneRound, tournamentHasScores } from "@/lib/schedule";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const int = (f: FormData, k: string) => parseInt(str(f, k), 10) || 0;
@@ -30,6 +30,10 @@ function errKey(e: unknown) {
 export async function generateRotation(formData: FormData) {
   const tour = await load(formData);
   let repeats = 0;
+  // Highest multiple of 4 plays; the last to sign up (up to 3) wait on stand-by. Also used to
+  // redo the rotation when more players arrive — only while no score has been entered.
+  if (await tournamentHasScores(tour.id)) back(tour.slug, 1, "&err=errScored");
+  await applyStandbySplit(tour.id);
   try {
     ({ repeats } = await buildRandomRounds(tour, 1));
   } catch (e) {

@@ -7,7 +7,7 @@ import SwipeRounds from "@/components/SwipeRounds";
 import Timer from "@/components/Timer";
 import { getT, type TKey } from "@/lib/i18n";
 import {
-  activeEntryIds, entryNames, forbiddenPairs, hasScore, isFinal, loadRounds, randomRoundCount, repeatsInRound, seatsOf, totalRepeats,
+  activeEntryIds, entryNames, forbiddenPairs, hasScore, isFinal, loadRounds, randomRoundCount, repeatsInRound, seatsOf, totalRepeats, standbySplit,
 } from "@/lib/schedule";
 import { listEntries } from "@/lib/tournaments";
 import { whatsappDigits } from "@/lib/phone";
@@ -30,6 +30,8 @@ export default async function TablesPage({ params, searchParams }: {
   const base = `/admin/t/${tour.slug}`;
   const [all, names, active, forbidden] = await Promise.all([loadRounds(tour.id), entryNames(tour.id), activeEntryIds(tour.id), forbiddenPairs(tour)]);
   const nameOf = (id: number) => names.get(id)?.name ?? "?";
+  const split = await standbySplit(tour.id);
+  const waitNames = split.wait.map((e) => `${e.first} ${e.last}`.trim()).join(", ");
   const missingPhones = (await listEntries(tour.id)).filter((e) => !e.phone).length;
   const liveRound = all.find((r) => r.status === "LIVE")?.number;
   const selected = parseInt(sp.r ?? "", 10) || liveRound || 1;
@@ -64,10 +66,15 @@ export default async function TablesPage({ params, searchParams }: {
             <h2>{t("noRotation")}</h2>
             <p className="help">{t("createRotationHelp", { n: randomRoundCount(tour) })}</p>
             {tour.rotationMode === "SWISS" && <p className="help">{t("swissLater", { r: tour.randomRoundsFirst + 1, p: tour.randomRoundsFirst })}</p>}
-            {(n < 4 || n % 4 !== 0) && <div className="notice warn">{t("errCount")} ({n})</div>}
+            {split.play.length < 4 && <div className="notice warn">{t("errCount")} ({split.all.length})</div>}
+            {split.play.length >= 4 && split.wait.length > 0 && (
+              <div className="notice warn">{t("rotationWithStandby", { n: split.play.length, tables: split.play.length / 4, k: split.wait.length, names: waitNames })}</div>
+            )}
             <form action={generateRotation}>
               <input type="hidden" name="tournamentId" value={tour.id} />
-              <button className="btn big block" disabled={n < 4 || n % 4 !== 0}>{t("createRotation")}</button>
+              <button className="btn big block" disabled={split.play.length < 4}>
+                {split.wait.length ? t("createRotationN", { n: split.play.length }) : t("createRotation")}
+              </button>
             </form>
           </section>
         </main>
@@ -91,7 +98,21 @@ export default async function TablesPage({ params, searchParams }: {
       {header}
       <main className="page wide">
         {notices}
-        {rosterChanged && <div className="notice warn">{t("rosterChanged", { a: seated.size, b: active.length })}</div>}
+        {(() => {
+          // More players arrived (or someone left with nobody waiting) before the first score:
+          // offer to redo the rotation with the new highest multiple of 4.
+          const want = new Set(split.play.map((e) => e.id));
+          const differs = want.size !== seated.size || [...want].some((id) => !seated.has(id));
+          if (!differs && !rosterChanged) return null;
+          if (anyScore) return rosterChanged ? <div className="notice warn">{t("rosterChanged", { a: seated.size, b: active.length })}</div> : null;
+          return (
+            <form action={generateRotation} className="notice warn stack">
+              <input type="hidden" name="tournamentId" value={tour.id} />
+              <span>{t("redoRotationHelp", { a: seated.size, n: split.play.length, k: split.wait.length })}{split.wait.length ? ` ${t("standbyNames", { names: waitNames })}` : ""}</span>
+              <ConfirmSubmit message={t("redoRotationConfirm", { n: split.play.length })} className="btn">{t("redoRotationBtn", { n: split.play.length })}</ConfirmSubmit>
+            </form>
+          );
+        })()}
         <p className="help">{problems.repeats ? t("repeatsTotal", { n: problems.repeats }) : t("repeatsNone")}</p>
 
         <nav className="row" aria-label={t("round")} style={{ gap: 6 }}>

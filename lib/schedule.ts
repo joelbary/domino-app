@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { entries, exclusions, gameTables, players, rounds, teams, tournaments } from "@/db/schema";
 import { randomSchedule, scheduleProblems, splitTeams, swissRound, type Table } from "@/lib/rotation";
@@ -162,4 +162,55 @@ export function repeatsInRound(all: LoadedRound[], roundNumber: number) {
 
 export function totalRepeats(all: LoadedRound[], forbidden: Array<[number, number]>) {
   return scheduleProblems(all.flatMap((r) => r.tables.map(seatsOf)), forbidden);
+}
+
+// ---------- stand-by ----------
+// Who plays and who waits: everyone signed up, in sign-up order. The first (highest multiple of 4)
+// play; the rest (at most 3, the last to sign up) wait on stand-by.
+export async function standbySplit(tournamentId: number) {
+  const all = await db
+    .select({ id: entries.id, standby: entries.standby, first: players.firstName, last: players.lastName })
+    .from(entries)
+    .innerJoin(players, eq(entries.playerId, players.id))
+    .where(and(eq(entries.tournamentId, tournamentId), eq(entries.active, true)))
+    .orderBy(asc(entries.id));
+  const playCount = Math.floor(all.length / 4) * 4;
+  return { all, play: all.slice(0, playCount), wait: all.slice(playCount) };
+}
+
+export async function applyStandbySplit(tournamentId: number) {
+  const { play, wait } = await standbySplit(tournamentId);
+  if (play.length) await db.update(entries).set({ standby: false }).where(inArray(entries.id, play.map((e) => e.id)));
+  if (wait.length) await db.update(entries).set({ standby: true }).where(inArray(entries.id, wait.map((e) => e.id)));
+}
+
+export async function tournamentHasScores(tournamentId: number) {
+  const [g] = await db.select({ id: gameTables.id }).from(gameTables).innerJoin(rounds, eq(gameTables.roundId, rounds.id))
+    .where(and(eq(rounds.tournamentId, tournamentId), sql`${gameTables.scoreA} is not null`)).limit(1);
+  return !!g;
+}
+
+// The first stand-by player takes over a seated player's place (same seats in every round).
+// The stand-by keeps their own team if they have one; otherwise they take the absent player's team.
+// Returns false when nobody is waiting.
+export async function fillFromStandby(tournamentId: number, absentId: number): Promise<boolean> {
+  const [absent] = await db.select().from(entries).where(and(eq(entries.id, absentId), eq(entries.tournamentId, tournamentId))).limit(1);
+  const [sb] = await db.select().from(entries)
+    .where(and(eq(entries.tournamentId, tournamentId), eq(entries.active, true), eq(entries.standby, true)))
+    .orderBy(asc(entries.id)).limit(1);
+  if (!absent || !sb) return false;
+  await db.transaction(async (tx) => {
+    // The seat changes person, so the absent player's MPL settings must not carry over.
+    await tx.update(tournaments).set({ mplOwnerEntryId: null }).where(inArray(tournaments.mplOwnerEntryId, [absent.id, sb.id]));
+    await tx.delete(exclusions).where(sql`${exclusions.entryAId} = ${absent.id} or ${exclusions.entryBId} = ${absent.id}`);
+    await tx.delete(entries).where(eq(entries.id, sb.id));
+    await tx.update(entries).set({ playerId: sb.playerId, teamId: sb.teamId ?? absent.teamId, standby: false }).where(eq(entries.id, absent.id));
+  });
+  return true;
+}
+
+export async function isSeated(entryId: number) {
+  const [g] = await db.select({ id: gameTables.id }).from(gameTables)
+    .where(sql`${gameTables.a1} = ${entryId} or ${gameTables.a2} = ${entryId} or ${gameTables.b1} = ${entryId} or ${gameTables.b2} = ${entryId}`).limit(1);
+  return !!g;
 }
