@@ -48,6 +48,26 @@ export default function Timer(p: Props) {
     return () => clearInterval(id);
   }, [end]);
 
+  // While the round's clock is running on a player's phone, keep the screen from going to sleep,
+  // so the TIME! alarm is visible when it ends. (Released when time is up or the page is left.)
+  const running = !!p.alert && end !== null && left !== null && left > 0;
+  useEffect(() => {
+    if (!running || !("wakeLock" in navigator)) return;
+    type Lock = { release: () => Promise<void> };
+    let lock: Lock | null = null;
+    let stopped = false;
+    const grab = async () => {
+      try {
+        if (document.visibilityState === "visible") lock = await (navigator as unknown as { wakeLock: { request: (t: "screen") => Promise<Lock> } }).wakeLock.request("screen");
+        if (stopped) lock?.release().catch(() => {});
+      } catch {}
+    };
+    grab();
+    const again = () => { if (document.visibilityState === "visible") grab(); };
+    document.addEventListener("visibilitychange", again);
+    return () => { stopped = true; document.removeEventListener("visibilitychange", again); lock?.release().catch(() => {}); };
+  }, [running]);
+
   useEffect(() => {
     if (!p.alert || end === null || left !== 0) return;
     let seen = false;

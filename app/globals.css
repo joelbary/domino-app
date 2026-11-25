@@ -166,6 +166,10 @@ table.standings tr.me td { background: var(--amber-tint); }
 .timer-chip.urgent { background: #f2c9c2; color: #7a1d12; }
 .timer-chip.paused { background: rgba(255, 255, 255, 0.18); color: var(--paper); }
 .timer-big { font-family: var(--display); font-weight: 700; font-size: 64px; line-height: 1; text-align: center; }
+/* TIME! alarm: flashes bright/dark red for ~6 seconds (1 flash per second, safe rate), then stays red. */
+@keyframes timeup-flash { 0%, 100% { background: #8a2215; } 50% { background: #e8231a; } }
+.timeup { animation: timeup-flash 1s ease-in-out 6; }
+@media (prefers-reduced-motion: reduce) { .timeup { animation: none; } }
 .timeup { position: fixed; inset: 0; z-index: 100; background: #8a2215; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px 24px; gap: 16px; }
 .timeup-title { font-family: var(--display); font-weight: 700; font-size: 76px; line-height: 0.95; }
 .timeup p { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.35; max-width: 420px; }
